@@ -25,11 +25,11 @@ const mockGetFreshAccessToken = vi.fn().mockResolvedValue('fresh-access-token');
 vi.mock('@/lib/integrations/google/refresh-token', () => ({
   getFreshAccessToken: (userId: string) => mockGetFreshAccessToken(userId),
 }));
-const mockCreateGmailCapability = vi.fn((_accessToken: string) => ({ search: vi.fn().mockResolvedValue([]), read: vi.fn(), draft: vi.fn() }));
+const mockCreateGmailCapability = vi.fn(() => ({ search: vi.fn().mockResolvedValue([]), read: vi.fn(), draft: vi.fn() }));
 vi.mock('@/lib/integrations/gmail/client', () => ({
   createGmailCapability: (accessToken: string) => mockCreateGmailCapability(accessToken),
 }));
-const mockCreateCalendarCapability = vi.fn((_accessToken: string) => ({ search: vi.fn().mockResolvedValue([]) }));
+const mockCreateCalendarCapability = vi.fn(() => ({ search: vi.fn().mockResolvedValue([]) }));
 vi.mock('@/lib/integrations/calendar/client', () => ({
   createCalendarCapability: (accessToken: string) => mockCreateCalendarCapability(accessToken),
 }));
