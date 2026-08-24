@@ -59,8 +59,9 @@ Next.js imports these modules while collecting page/route data during
     one: create a new Neon branch/project, then run
     ```bash
     export DATABASE_URL="<new-prod-url>"
-    pnpm exec drizzle-kit migrate
+    pnpm run db:migrate
     ```
+    (alias for `pnpm exec drizzle-kit migrate`)
     followed by, once, directly against that database (psql or the Neon SQL
     editor):
     ```sql
