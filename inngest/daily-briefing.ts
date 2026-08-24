@@ -31,32 +31,57 @@ export async function generateBriefing(ctx: { userId: string; email: EmailCapabi
   return result.object;
 }
 
+/**
+ * Loads the distinct set of userIds with a linked integration account.
+ * Deliberately returns bare userIds, never whole `integration_accounts`
+ * rows: this is the return value of the `load-accounts` Inngest step below,
+ * and Inngest persists a step's return value in its own durable/cloud state
+ * (and shows it in the run inspector UI) - access_token/refresh_token must
+ * never end up there.
+ */
+export async function loadAccountUserIds(): Promise<string[]> {
+  const { db } = await import('@/db/client');
+  const { integrationAccounts } = await import('@/db/schema');
+  const rows = await db.select({ userId: integrationAccounts.userId }).from(integrationAccounts);
+  return [...new Set(rows.map((row) => row.userId))];
+}
+
+/**
+ * Generates and persists one user's daily briefing. Fetches its own fresh
+ * Google access token internally (via getFreshAccessToken) rather than
+ * accepting one as a parameter, so no token ever needs to flow through -
+ * and get memoized by - the outer Inngest step's return value.
+ */
+export async function generateAndSaveBriefing(userId: string): Promise<void> {
+  const { db } = await import('@/db/client');
+  const { dailyBriefings } = await import('@/db/schema');
+  const { createGmailCapability } = await import('@/lib/integrations/gmail/client');
+  const { createCalendarCapability } = await import('@/lib/integrations/calendar/client');
+  const { getFreshAccessToken } = await import('@/lib/integrations/google/refresh-token');
+
+  const accessToken = await getFreshAccessToken(userId);
+  const briefing = await generateBriefing({
+    userId,
+    email: createGmailCapability(accessToken),
+    calendar: createCalendarCapability(accessToken),
+  });
+  await db.insert(dailyBriefings).values({
+    userId,
+    briefingDate: new Date().toISOString().slice(0, 10),
+    attentionItems: briefing.attentionItems,
+    digestItems: briefing.digestItems,
+  });
+}
+
 export const dailyBriefingFn = inngest.createFunction(
   { id: 'daily-briefing', retries: 3, triggers: { cron: '0 8 * * *' } },
   async ({ step }) => {
     // V1: iterate integration_accounts directly; a per-user fan-out event is a
     // straightforward Phase 2 change once user volume justifies it.
-    const { db } = await import('@/db/client');
-    const { integrationAccounts, dailyBriefings } = await import('@/db/schema');
-    const { createGmailCapability } = await import('@/lib/integrations/gmail/client');
-    const { createCalendarCapability } = await import('@/lib/integrations/calendar/client');
+    const userIds = await step.run('load-accounts', loadAccountUserIds);
 
-    const accounts = await step.run('load-accounts', () => db.select().from(integrationAccounts));
-
-    for (const account of accounts) {
-      await step.run(`briefing-${account.userId}`, async () => {
-        const briefing = await generateBriefing({
-          userId: account.userId,
-          email: createGmailCapability(account.accessToken),
-          calendar: createCalendarCapability(account.accessToken),
-        });
-        await db.insert(dailyBriefings).values({
-          userId: account.userId,
-          briefingDate: new Date().toISOString().slice(0, 10),
-          attentionItems: briefing.attentionItems,
-          digestItems: briefing.digestItems,
-        });
-      });
+    for (const userId of userIds) {
+      await step.run(`briefing-${userId}`, () => generateAndSaveBriefing(userId));
     }
   },
 );
