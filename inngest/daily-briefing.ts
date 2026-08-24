@@ -80,8 +80,17 @@ export const dailyBriefingFn = inngest.createFunction(
     // straightforward Phase 2 change once user volume justifies it.
     const userIds = await step.run('load-accounts', loadAccountUserIds);
 
+    // One user's failure (e.g. a revoked refresh token) must not take down
+    // everyone else's briefing: without this try/catch, a thrown step.run
+    // retries 3x and then fails the whole function, so every user later in
+    // the loop gets no briefing that day - not just the one with the bad
+    // token. Log and move on to the next user instead.
     for (const userId of userIds) {
-      await step.run(`briefing-${userId}`, () => generateAndSaveBriefing(userId));
+      try {
+        await step.run(`briefing-${userId}`, () => generateAndSaveBriefing(userId));
+      } catch (err) {
+        console.error(`[daily-briefing] failed to generate briefing for user ${userId}:`, err);
+      }
     }
   },
 );
