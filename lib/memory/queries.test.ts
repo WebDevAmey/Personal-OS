@@ -59,4 +59,17 @@ describe('memory domain library', () => {
     const results = await searchMemory(USER_A, 'API', 5);
     expect(results).toHaveLength(0);
   });
+
+  // Finding 4: raw embedding vectors (512 floats/row) must never leave this
+  // query - they get serialized straight into the model's context by
+  // lib/ai/tools/index.ts's search_memory tool, and into agent_actions.output
+  // jsonb, on every memory search. The caller only needs the vector to drive
+  // ORDER BY, never the vector values themselves back.
+  it('does not include the raw embedding vector in search results', async () => {
+    await saveMemory(USER_A, 'Ask Rahul about the API tomorrow');
+    const results = await searchMemory(USER_A, 'API', 5);
+    expect(results).toHaveLength(1);
+    expect(results[0]).not.toHaveProperty('embedding');
+    expect(Object.keys(results[0]).sort()).toEqual(['content', 'createdAt', 'id', 'userId']);
+  });
 });
