@@ -1,11 +1,15 @@
 import { auth } from '@/auth';
-import { db } from '@/db/client';
-import { integrationAccounts } from '@/db/schema';
-import { eq } from 'drizzle-orm';
 import { runCommand } from '@/lib/ai/orchestrator';
 import { createGmailCapability } from '@/lib/integrations/gmail/client';
 import { createCalendarCapability } from '@/lib/integrations/calendar/client';
 import { createWebCapability } from '@/lib/integrations/web/client';
+import {
+  getFreshAccessToken,
+  NoIntegrationAccountError,
+  TokenRefreshFailedError,
+} from '@/lib/integrations/google/refresh-token';
+
+const RECONNECT_MESSAGE = 'Your Google account connection has expired or is missing — please sign in again to reconnect.';
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -14,12 +18,26 @@ export async function POST(req: Request) {
   }
 
   const { input } = await req.json();
-  const [account] = await db.select().from(integrationAccounts).where(eq(integrationAccounts.userId, session.user.id));
+
+  let accessToken: string;
+  try {
+    accessToken = await getFreshAccessToken(session.user.id);
+  } catch (err) {
+    // Missing account row or a failed refresh (e.g. revoked refresh token)
+    // both mean the same thing to the user: reconnect Google. Respond 200
+    // with a friendly message (matching the rate-limit-exceeded pattern in
+    // lib/ai/orchestrator.ts) instead of a 500 - the command bar UI just
+    // renders `message` either way.
+    if (err instanceof NoIntegrationAccountError || err instanceof TokenRefreshFailedError) {
+      return Response.json({ message: RECONNECT_MESSAGE });
+    }
+    throw err;
+  }
 
   const result = await runCommand({
     userId: session.user.id,
-    email: createGmailCapability(account.accessToken),
-    calendar: createCalendarCapability(account.accessToken),
+    email: createGmailCapability(accessToken),
+    calendar: createCalendarCapability(accessToken),
     web: createWebCapability(process.env.TAVILY_API_KEY!),
   }, input);
 

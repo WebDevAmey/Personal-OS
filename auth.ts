@@ -55,12 +55,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // scope, expires_at) needed below.
     async signIn({ user, account }) {
       if (account?.provider === 'google' && user.id) {
-        await persistIntegrationAccount(user.id, {
-          accessToken: account.access_token!,
-          refreshToken: account.refresh_token,
-          scopes: account.scope ?? '',
-          expiresAt: account.expires_at ? new Date(account.expires_at * 1000) : null,
-        });
+        // Deliberately swallow (not rethrow) errors from this app-specific
+        // side effect: the adapter has already committed the user/session
+        // by the time events.signIn fires, so a failure here must not turn
+        // a successful sign-in into an auth error page. The command route
+        // (app/api/command/route.ts) already handles a missing/stale
+        // integration_accounts row gracefully via getFreshAccessToken's
+        // NoIntegrationAccountError/TokenRefreshFailedError, so the user
+        // just sees that "reconnect your Google account" message on their
+        // next command instead of a broken sign-in flow.
+        try {
+          await persistIntegrationAccount(user.id, {
+            accessToken: account.access_token!,
+            refreshToken: account.refresh_token,
+            scopes: account.scope ?? '',
+            expiresAt: account.expires_at ? new Date(account.expires_at * 1000) : null,
+          });
+        } catch (err) {
+          console.error(`[auth] persistIntegrationAccount failed for user ${user.id} after Google sign-in:`, err);
+        }
       }
     },
   },
