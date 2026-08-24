@@ -90,6 +90,35 @@ export async function withIdempotency<T>(
       // winning row instead of throwing a confusing second conflict.
       const winner = await loadWinningSuccessOutput<T>(ctx.idempotencyKey);
       if (winner.found) return winner.output;
+
+      // The existing row isn't a success - e.g. a concurrent call's
+      // action() failed and its 'error' row won the insert race just
+      // before ours arrived, even though *our* action() succeeded. That
+      // row is stale and must not be left in place: the next retry with
+      // this key would delete it and re-run the action a second time,
+      // discarding the valid output we already computed here. Clear the
+      // stale row and persist our own success under the freed key,
+      // mirroring the delete-then-insert handling above for a stale
+      // pre-existing row.
+      await db.delete(agentActions).where(eq(agentActions.idempotencyKey, ctx.idempotencyKey));
+      try {
+        await db.insert(agentActions).values({
+          agentRunId: ctx.agentRunId,
+          toolName: ctx.toolName,
+          input: ctx.input,
+          output,
+          idempotencyKey: ctx.idempotencyKey,
+          status: 'success',
+        });
+      } catch {
+        // Extremely unlikely: a third concurrent writer raced us for the
+        // freed key in this narrow window. Don't crash the caller over a
+        // bookkeeping conflict - `output` is still a genuine, correct
+        // result from our own action() call, so return it even though we
+        // couldn't persist it here. Losing the audit row is better than
+        // losing (or re-running) a real, already-completed mutation.
+      }
+      return output;
     }
     throw insertErr;
   }

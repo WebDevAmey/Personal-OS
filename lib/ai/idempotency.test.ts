@@ -94,6 +94,56 @@ describe('withIdempotency', () => {
     expect(result).toEqual({ id: 'task-winner' });
   });
 
+  // Re-review finding: call A's action() fails and its 'error' row wins the
+  // insert race; call B's action() succeeds but loses that race. B must not
+  // discard its own valid output by throwing the raw conflict error, and it
+  // must not leave A's stale 'error' row in place either (that would cause
+  // the next retry to delete-and-rerun the action a third time). B should
+  // clear the stale row and persist its own success under the freed key.
+  it('clears a stale error row and persists its own output when the success-path insert loses a race against it', async () => {
+    let selectCallCount = 0;
+    (db.select as any).mockImplementation(() => ({
+      from: () => ({
+        where: () => {
+          selectCallCount += 1;
+          // 1st call: this call's own initial check - no row yet (both A
+          // and B start from a clean key).
+          if (selectCallCount === 1) return Promise.resolve([]);
+          // 2nd call: re-fetch inside loadWinningSuccessOutput after losing
+          // the insert race - A's stale 'error' row is now visible (A's
+          // action() failed and its error row won the insert race).
+          return Promise.resolve([{ output: { error: 'boom' }, status: 'error' }]);
+        },
+      }),
+    }));
+    const deleteWhere = vi.fn().mockResolvedValue(undefined);
+    (db.delete as any).mockReturnValue({ where: deleteWhere });
+
+    const uniqueViolation = Object.assign(
+      new Error('duplicate key value violates unique constraint "agent_actions_idempotency_key_unique"'),
+      { code: '23505' },
+    );
+    const values = vi.fn().mockRejectedValueOnce(uniqueViolation).mockResolvedValueOnce(undefined);
+    (db.insert as any).mockReturnValue({ values });
+
+    const action = vi.fn().mockResolvedValue({ id: 'task-mine' });
+    const result = await withIdempotency(
+      { agentRunId: 'run-1', toolName: 'create_task', idempotencyKey: 'key-stale-error', input: { title: 'x' } },
+      action,
+    );
+
+    expect(action).toHaveBeenCalledOnce();
+    expect(result).toEqual({ id: 'task-mine' });
+    expect(db.delete).toHaveBeenCalledWith(agentActions);
+    expect(deleteWhere).toHaveBeenCalled();
+    // First attempt hit the unique-constraint conflict, second is the retry
+    // that actually persists our own successful output.
+    expect(values).toHaveBeenCalledTimes(2);
+    expect(values).toHaveBeenLastCalledWith(
+      expect.objectContaining({ idempotencyKey: 'key-stale-error', status: 'success', output: { id: 'task-mine' } }),
+    );
+  });
+
   it('propagates a non-unique-constraint insert error instead of swallowing it', async () => {
     (db.select as any).mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) });
     const dbError = new Error('connection reset');
