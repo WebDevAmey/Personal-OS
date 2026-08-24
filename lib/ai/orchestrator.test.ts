@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runCommand } from './orchestrator';
 import { db } from '@/db/client';
+import type { checkRateLimit } from '@/lib/rate-limit';
 
 const mockInsertReturning = vi.fn();
 const mockUpdateWhere = vi.fn();
@@ -15,12 +16,12 @@ vi.mock('@/db/client', () => ({
 const mockGenerateText = vi.fn();
 vi.mock('ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ai')>();
-  return { ...actual, generateText: (...args: any[]) => mockGenerateText(...args) };
+  return { ...actual, generateText: (...args: Parameters<typeof actual.generateText>) => mockGenerateText(...args) };
 });
 
 const mockCheckRateLimit = vi.fn();
 vi.mock('@/lib/rate-limit', () => ({
-  checkRateLimit: (...args: any[]) => mockCheckRateLimit(...args),
+  checkRateLimit: (...args: Parameters<typeof checkRateLimit>) => mockCheckRateLimit(...args),
 }));
 
 function makeCtx() {

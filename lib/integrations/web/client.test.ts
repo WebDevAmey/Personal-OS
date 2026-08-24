@@ -9,7 +9,7 @@ describe('createWebCapability', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ results: [{ title: 'Speculative Decoding explained', url: 'https://example.com/spec-decoding', content: 'A technique that...' }] }),
-    }) as any;
+    }) as unknown as typeof fetch;
 
     const web = createWebCapability('fake-tavily-key');
     const results = await web.search('speculative decoding');
@@ -21,7 +21,7 @@ describe('createWebCapability', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ results: [{ raw_content: 'Full article text.' }] }),
-    }) as any;
+    }) as unknown as typeof fetch;
 
     const web = createWebCapability('fake-tavily-key');
     const content = await web.read('https://example.com/spec-decoding');
@@ -32,7 +32,7 @@ describe('createWebCapability', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 401,
-    }) as any;
+    }) as unknown as typeof fetch;
 
     const web = createWebCapability('invalid-key');
     await expect(web.search('test')).rejects.toThrow('Tavily search failed: 401');
@@ -42,7 +42,7 @@ describe('createWebCapability', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
-    }) as any;
+    }) as unknown as typeof fetch;
 
     const web = createWebCapability('fake-key');
     await expect(web.read('https://example.com')).rejects.toThrow('Tavily extract failed: 500');
@@ -52,7 +52,7 @@ describe('createWebCapability', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ results: [] }),
-    }) as any;
+    }) as unknown as typeof fetch;
 
     const web = createWebCapability('fake-key');
     const content = await web.read('https://example.com');

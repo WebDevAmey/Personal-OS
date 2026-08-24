@@ -38,7 +38,10 @@ describe('buildToolRegistry', () => {
       web: { search: vi.fn(), read: vi.fn() },
     });
 
-    const result = await registry.create_task.execute({ title: 'Finish assembler assignment' }, { toolCallId: 'call-1', messages: [] } as any);
+    const result = await registry.create_task.execute(
+      { title: 'Finish assembler assignment' },
+      { toolCallId: 'call-1', messages: [] } as unknown as Parameters<typeof registry.create_task.execute>[1],
+    );
     expect(result).toEqual(expect.objectContaining({ title: 'Finish assembler assignment', userId: 'user-1' }));
   });
 });

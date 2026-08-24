@@ -7,13 +7,19 @@ vi.mock('@/db/client', () => ({
   db: { select: vi.fn(), insert: vi.fn(), delete: vi.fn() },
 }));
 
+const mockedDb = db as unknown as {
+  select: ReturnType<typeof vi.fn>;
+  insert: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
+};
+
 describe('withIdempotency', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('runs the action and records it when the key has not been seen', async () => {
-    (db.select as any).mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) });
+    mockedDb.select.mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) });
     const values = vi.fn().mockResolvedValue(undefined);
-    (db.insert as any).mockReturnValue({ values });
+    mockedDb.insert.mockReturnValue({ values });
 
     const action = vi.fn().mockResolvedValue({ id: 'task-1' });
     const result = await withIdempotency({ agentRunId: 'run-1', toolName: 'create_task', idempotencyKey: 'key-1', input: { title: 'x' } }, action);
@@ -24,7 +30,7 @@ describe('withIdempotency', () => {
   });
 
   it('skips re-running the action when the key was already recorded as a success', async () => {
-    (db.select as any).mockReturnValue({
+    mockedDb.select.mockReturnValue({
       from: () => ({ where: () => Promise.resolve([{ output: { id: 'task-1' }, status: 'success' }]) }),
     });
 
@@ -38,13 +44,13 @@ describe('withIdempotency', () => {
   // Finding 1: a failed prior attempt must not be replayed back as a cached
   // success - the action needs a genuine chance to succeed on retry.
   it('re-runs the action when the existing row recorded a failure, instead of treating it as cached success', async () => {
-    (db.select as any).mockReturnValue({
+    mockedDb.select.mockReturnValue({
       from: () => ({ where: () => Promise.resolve([{ output: { error: 'boom' }, status: 'error' }]) }),
     });
     const deleteWhere = vi.fn().mockResolvedValue(undefined);
-    (db.delete as any).mockReturnValue({ where: deleteWhere });
+    mockedDb.delete.mockReturnValue({ where: deleteWhere });
     const values = vi.fn().mockResolvedValue(undefined);
-    (db.insert as any).mockReturnValue({ values });
+    mockedDb.insert.mockReturnValue({ values });
 
     const action = vi.fn().mockResolvedValue({ id: 'task-2' });
     const result = await withIdempotency({ agentRunId: 'run-1', toolName: 'create_task', idempotencyKey: 'key-1', input: { title: 'x' } }, action);
@@ -64,7 +70,7 @@ describe('withIdempotency', () => {
   // row).
   it('resolves to the winning row when insert loses a unique-constraint race against a concurrent call for the same key', async () => {
     let selectCallCount = 0;
-    (db.select as any).mockImplementation(() => ({
+    mockedDb.select.mockImplementation(() => ({
       from: () => ({
         where: () => {
           selectCallCount += 1;
@@ -82,7 +88,7 @@ describe('withIdempotency', () => {
       { code: '23505' },
     );
     const values = vi.fn().mockRejectedValue(uniqueViolation);
-    (db.insert as any).mockReturnValue({ values });
+    mockedDb.insert.mockReturnValue({ values });
 
     const action = vi.fn().mockResolvedValue({ id: 'task-mine' });
     const result = await withIdempotency({ agentRunId: 'run-1', toolName: 'create_task', idempotencyKey: 'key-race', input: { title: 'x' } }, action);
@@ -102,7 +108,7 @@ describe('withIdempotency', () => {
   // clear the stale row and persist its own success under the freed key.
   it('clears a stale error row and persists its own output when the success-path insert loses a race against it', async () => {
     let selectCallCount = 0;
-    (db.select as any).mockImplementation(() => ({
+    mockedDb.select.mockImplementation(() => ({
       from: () => ({
         where: () => {
           selectCallCount += 1;
@@ -117,14 +123,14 @@ describe('withIdempotency', () => {
       }),
     }));
     const deleteWhere = vi.fn().mockResolvedValue(undefined);
-    (db.delete as any).mockReturnValue({ where: deleteWhere });
+    mockedDb.delete.mockReturnValue({ where: deleteWhere });
 
     const uniqueViolation = Object.assign(
       new Error('duplicate key value violates unique constraint "agent_actions_idempotency_key_unique"'),
       { code: '23505' },
     );
     const values = vi.fn().mockRejectedValueOnce(uniqueViolation).mockResolvedValueOnce(undefined);
-    (db.insert as any).mockReturnValue({ values });
+    mockedDb.insert.mockReturnValue({ values });
 
     const action = vi.fn().mockResolvedValue({ id: 'task-mine' });
     const result = await withIdempotency(
@@ -155,7 +161,7 @@ describe('withIdempotency', () => {
   // since the caller's action() did genuinely succeed.
   it('logs and still returns output when the retry insert after clearing a stale row fails for a non-unique-violation reason', async () => {
     let selectCallCount = 0;
-    (db.select as any).mockImplementation(() => ({
+    mockedDb.select.mockImplementation(() => ({
       from: () => ({
         where: () => {
           selectCallCount += 1;
@@ -165,7 +171,7 @@ describe('withIdempotency', () => {
       }),
     }));
     const deleteWhere = vi.fn().mockResolvedValue(undefined);
-    (db.delete as any).mockReturnValue({ where: deleteWhere });
+    mockedDb.delete.mockReturnValue({ where: deleteWhere });
 
     const uniqueViolation = Object.assign(
       new Error('duplicate key value violates unique constraint "agent_actions_idempotency_key_unique"'),
@@ -173,7 +179,7 @@ describe('withIdempotency', () => {
     );
     const connectionError = new Error('connection reset');
     const values = vi.fn().mockRejectedValueOnce(uniqueViolation).mockRejectedValueOnce(connectionError);
-    (db.insert as any).mockReturnValue({ values });
+    mockedDb.insert.mockReturnValue({ values });
 
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -192,10 +198,10 @@ describe('withIdempotency', () => {
   });
 
   it('propagates a non-unique-constraint insert error instead of swallowing it', async () => {
-    (db.select as any).mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) });
+    mockedDb.select.mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) });
     const dbError = new Error('connection reset');
     const values = vi.fn().mockRejectedValue(dbError);
-    (db.insert as any).mockReturnValue({ values });
+    mockedDb.insert.mockReturnValue({ values });
 
     const action = vi.fn().mockResolvedValue({ id: 'task-3' });
 

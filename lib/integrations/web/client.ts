@@ -10,7 +10,7 @@ export function createWebCapability(apiKey: string): WebCapability {
       });
       if (!res.ok) throw new Error(`Tavily search failed: ${res.status}`);
       const json = await res.json();
-      return json.results.map((r: any) => ({ title: r.title, url: r.url, snippet: r.content }));
+      return json.results.map((r: { title: string; url: string; content: string }) => ({ title: r.title, url: r.url, snippet: r.content }));
     },
 
     async read(url: string): Promise<string> {

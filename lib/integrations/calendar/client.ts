@@ -18,8 +18,8 @@ export function createCalendarCapability(accessToken: string): CalendarCapabilit
       return (res.data.items ?? []).map((e) => ({
         id: e.id!,
         title: e.summary ?? '(no title)',
-        start: new Date(e.start?.dateTime ?? e.start?.date!),
-        end: new Date(e.end?.dateTime ?? e.end?.date!),
+        start: new Date((e.start?.dateTime ?? e.start?.date) as string),
+        end: new Date((e.end?.dateTime ?? e.end?.date) as string),
         location: e.location ?? undefined,
       }));
     },
