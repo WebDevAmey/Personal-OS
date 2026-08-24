@@ -92,6 +92,16 @@ export async function getFreshAccessToken(userId: string): Promise<string> {
 
   const data = await response.json() as GoogleTokenResponse;
 
+  // Guard against a malformed/incomplete response from Google: without this,
+  // a missing `expires_in` silently produces an Invalid Date below, which
+  // drizzle's timestamp encoder throws a raw (untyped) RangeError on later -
+  // escaping the route's `instanceof TokenRefreshFailedError` guard and
+  // producing exactly the raw 500 this error-handling chain exists to
+  // prevent. Fail loudly and typed here instead.
+  if (typeof data.expires_in !== 'number' || !Number.isFinite(data.expires_in)) {
+    throw new TokenRefreshFailedError(userId, `Google token endpoint response missing a valid expires_in: ${JSON.stringify(data)}`);
+  }
+
   // Google does not always return a new refresh_token on a refresh call -
   // only keep the new one if it sent one, otherwise the existing refresh
   // token is still valid and must be preserved.

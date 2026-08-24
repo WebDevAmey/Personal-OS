@@ -169,4 +169,31 @@ describe('getFreshAccessToken', () => {
     await expect(getFreshAccessToken('user-1')).rejects.toThrow(TokenRefreshFailedError);
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  // Finding 3: a response missing `expires_in` must throw a typed
+  // TokenRefreshFailedError instead of silently producing `new Date(NaN)`
+  // (Invalid Date), which drizzle's timestamp encoder throws a raw,
+  // untyped RangeError on - a crash that escapes the route's
+  // `instanceof TokenRefreshFailedError` guard and produces a raw 500.
+  it('throws TokenRefreshFailedError when the response is missing expires_in', async () => {
+    mockAccountRow({ expiresAt: new Date('2020-01-01T00:00:00Z') });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'new-access-token' }),
+    }) as unknown as typeof fetch;
+
+    await expect(getFreshAccessToken('user-1')).rejects.toThrow(TokenRefreshFailedError);
+    expect(mockedPersist).not.toHaveBeenCalled();
+  });
+
+  it('throws TokenRefreshFailedError when expires_in is not a valid number', async () => {
+    mockAccountRow({ expiresAt: new Date('2020-01-01T00:00:00Z') });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'new-access-token', expires_in: 'soon' }),
+    }) as unknown as typeof fetch;
+
+    await expect(getFreshAccessToken('user-1')).rejects.toThrow(TokenRefreshFailedError);
+    expect(mockedPersist).not.toHaveBeenCalled();
+  });
 });
