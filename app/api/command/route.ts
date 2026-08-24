@@ -27,8 +27,18 @@ export async function POST(req: Request) {
     // both mean the same thing to the user: reconnect Google. Respond 200
     // with a friendly message (matching the rate-limit-exceeded pattern in
     // lib/ai/orchestrator.ts) instead of a 500 - the command bar UI just
-    // renders `message` either way.
+    // renders `message` either way. Still log server-side (including
+    // TokenRefreshFailedError's `cause`, which carries Google's HTTP status
+    // and response body) so a genuine Google outage, a misconfigured
+    // AUTH_GOOGLE_ID/AUTH_GOOGLE_SECRET, and an actually-revoked user grant
+    // stay distinguishable in the logs even though the user sees the same
+    // friendly message either way.
     if (err instanceof NoIntegrationAccountError || err instanceof TokenRefreshFailedError) {
+      if (err instanceof TokenRefreshFailedError && err.cause !== undefined) {
+        console.error(`[command] getFreshAccessToken failed for user ${session.user.id}:`, err, 'cause:', err.cause);
+      } else {
+        console.error(`[command] getFreshAccessToken failed for user ${session.user.id}:`, err);
+      }
       return Response.json({ message: RECONNECT_MESSAGE });
     }
     throw err;

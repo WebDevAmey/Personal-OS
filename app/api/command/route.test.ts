@@ -56,4 +56,29 @@ describe('POST /api/command', () => {
     const json = await res.json();
     expect(json.message).toMatch(/reconnect|sign in again/i);
   });
+
+  // Finding 2 (review): both error branches previously logged nothing, so a
+  // genuine Google outage, a misconfigured AUTH_GOOGLE_ID/SECRET, and an
+  // actually-revoked user grant were indistinguishable server-side. Assert
+  // both branches log, and that TokenRefreshFailedError's `cause` (Google's
+  // HTTP status + response body) is surfaced rather than dropped.
+  it('logs the error server-side when there is no google integration account', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const err = new NoIntegrationAccountError('user-1');
+    mockGetFreshAccessToken.mockRejectedValueOnce(err);
+    const req = new Request('http://localhost/api/command', { method: 'POST', body: JSON.stringify({ input: 'hi' }) });
+    await POST(req);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('user-1'), err);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('logs the error and its cause server-side when the Google token refresh fails', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const err = new TokenRefreshFailedError('user-1', 'Google token endpoint returned 400: invalid_grant');
+    mockGetFreshAccessToken.mockRejectedValueOnce(err);
+    const req = new Request('http://localhost/api/command', { method: 'POST', body: JSON.stringify({ input: 'hi' }) });
+    await POST(req);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('user-1'), err, 'cause:', 'Google token endpoint returned 400: invalid_grant');
+    consoleErrorSpy.mockRestore();
+  });
 });
