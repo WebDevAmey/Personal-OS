@@ -44,6 +44,32 @@ describe('createGmailCapability', () => {
     }]);
   });
 
+  it('reads a single message and maps it to EmailMessage with body', async () => {
+    mockUsersGet.mockResolvedValue({
+      data: {
+        id: 'msg-1',
+        snippet: 'Hi, following up on the API access request...',
+        internalDate: `${new Date('2026-08-24T09:00:00Z').getTime()}`,
+        payload: { headers: [
+          { name: 'From', value: 'recruiter@example.com' },
+          { name: 'Subject', value: 'Following up' },
+        ] },
+      },
+    });
+
+    const gmail = createGmailCapability('fake-access-token');
+    const result = await gmail.read('msg-1');
+
+    expect(result).toEqual({
+      id: 'msg-1',
+      from: 'recruiter@example.com',
+      subject: 'Following up',
+      snippet: 'Hi, following up on the API access request...',
+      receivedAt: new Date('2026-08-24T09:00:00Z'),
+      body: 'Hi, following up on the API access request...',
+    });
+  });
+
   it('creates a draft via the Gmail API', async () => {
     mockDraftsCreate.mockResolvedValue({ data: { id: 'draft-1' } });
     const gmail = createGmailCapability('fake-access-token');
