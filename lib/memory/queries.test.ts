@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { db } from '@/db/client';
 import { memories, users } from '@/db/schema';
 import { saveMemory, searchMemory } from './queries';
+import { inArray } from 'drizzle-orm';
 
 vi.mock('@/lib/ai/embeddings', () => ({
   embed: vi.fn(async (text: string) => {
@@ -22,15 +23,20 @@ vi.mock('@/lib/ai/embeddings', () => ({
   }),
 }));
 
-const USER_A = 'user-a';
-const USER_B = 'user-b';
+// Prefixed so these fixture rows can never collide with another test
+// file's fixture rows in the same shared `users` table (e.g.
+// lib/tasks/queries.test.ts), which matters because Vitest runs test
+// files in parallel by default and each file's beforeEach only deletes
+// its own scoped rows.
+const USER_A = 'memory-test-user-a';
+const USER_B = 'memory-test-user-b';
 
 beforeEach(async () => {
-  await db.delete(memories);
-  await db.delete(users);
+  await db.delete(memories).where(inArray(memories.userId, [USER_A, USER_B]));
+  await db.delete(users).where(inArray(users.id, [USER_A, USER_B]));
   await db.insert(users).values([
-    { id: USER_A, email: 'user-a@test.com' },
-    { id: USER_B, email: 'user-b@test.com' },
+    { id: USER_A, email: 'memory-test-user-a@test.com' },
+    { id: USER_B, email: 'memory-test-user-b@test.com' },
   ]);
 });
 
