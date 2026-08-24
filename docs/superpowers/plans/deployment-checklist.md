@@ -49,25 +49,22 @@ Next.js imports these modules while collecting page/route data during
 ## 2. Infrastructure setup
 
 - [ ] Neon project exists. **The Neon branch already used during local
-      development is fully migrated** (both files in `db/migrations/` —
-      `0000_greedy_lily_hollister.sql`, `0001_sharp_korvac.sql` — applied,
-      `pgvector` extension created, `memories_embedding_idx` hnsw index
-      applied). **This branch can be pointed to directly as
-      `DATABASE_URL` in Vercel Production** — no separate migration run is
-      required.
+      development is fully migrated** (all three files in `db/migrations/` —
+      `0000_greedy_lily_hollister.sql`, `0001_sharp_korvac.sql`,
+      `0002_memories_embedding_hnsw_index.sql` — applied, `pgvector`
+      extension created, `memories_embedding_idx` hnsw index applied).
+      **This branch can be pointed to directly as `DATABASE_URL` in Vercel
+      Production** — no separate migration run is required.
   - Only if you want an isolated prod database instead of reusing the dev
     one: create a new Neon branch/project, then run
     ```bash
     export DATABASE_URL="<new-prod-url>"
     pnpm run db:migrate
     ```
-    (alias for `pnpm exec drizzle-kit migrate`)
-    followed by, once, directly against that database (psql or the Neon SQL
-    editor):
-    ```sql
-    CREATE INDEX IF NOT EXISTS memories_embedding_idx
-      ON memories USING hnsw (embedding vector_cosine_ops);
-    ```
+    (alias for `pnpm exec drizzle-kit migrate`). The `memories_embedding_idx`
+    hnsw index is now part of `db/migrations/0002_memories_embedding_hnsw_index.sql`
+    (a `CREATE INDEX IF NOT EXISTS`), so this one command is sufficient — no
+    separate manual `psql`/Neon SQL editor step is needed anymore.
 - [ ] Upstash Redis database created; REST URL + token copied from the
       database's "REST API" tab in the Upstash console.
 - [ ] Inngest app connected: in the Inngest dashboard, add the deployed app
