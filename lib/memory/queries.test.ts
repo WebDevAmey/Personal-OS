@@ -47,6 +47,17 @@ describe('memory domain library', () => {
     expect(memory.content).toBe('Ask Rahul about the API tomorrow');
   });
 
+  // Finding 1: the real leak was here, not in searchMemory. save_memory is
+  // wrapped in idempotent(...) (lib/ai/tools/index.ts), so whatever
+  // saveMemory returns gets serialized into agent_actions.output jsonb (and
+  // back to the model as the tool result) on every single memory save - a
+  // raw `.returning()` would leak the 512-float embedding on every save.
+  it('does not include the raw embedding vector in the saved memory it returns', async () => {
+    const memory = await saveMemory(USER_A, 'Ask Rahul about the API tomorrow');
+    expect(memory).not.toHaveProperty('embedding');
+    expect(Object.keys(memory).sort()).toEqual(['content', 'createdAt', 'id', 'userId']);
+  });
+
   it('returns the closest memory first for a semantically related query', async () => {
     await saveMemory(USER_A, 'Ask Rahul about the API tomorrow');
     await saveMemory(USER_A, 'Buy milk on the way home');
@@ -60,11 +71,12 @@ describe('memory domain library', () => {
     expect(results).toHaveLength(0);
   });
 
-  // Finding 4: raw embedding vectors (512 floats/row) must never leave this
-  // query - they get serialized straight into the model's context by
-  // lib/ai/tools/index.ts's search_memory tool, and into agent_actions.output
-  // jsonb, on every memory search. The caller only needs the vector to drive
-  // ORDER BY, never the vector values themselves back.
+  // Raw embedding vectors (512 floats/row) must never leave this query -
+  // they'd otherwise get serialized straight into the model's context via
+  // lib/ai/tools/index.ts's search_memory tool result. (search_memory is not
+  // idempotency-wrapped, so this is defense-in-depth rather than the
+  // audit-log leak itself - see the saveMemory test above for that.) The
+  // caller only needs the vector to drive ORDER BY, never the values back.
   it('does not include the raw embedding vector in search results', async () => {
     await saveMemory(USER_A, 'Ask Rahul about the API tomorrow');
     const results = await searchMemory(USER_A, 'API', 5);
