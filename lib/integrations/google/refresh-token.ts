@@ -93,13 +93,26 @@ export async function getFreshAccessToken(userId: string): Promise<string> {
   const data = await response.json() as GoogleTokenResponse;
 
   // Guard against a malformed/incomplete response from Google: without this,
-  // a missing `expires_in` silently produces an Invalid Date below, which
-  // drizzle's timestamp encoder throws a raw (untyped) RangeError on later -
-  // escaping the route's `instanceof TokenRefreshFailedError` guard and
-  // producing exactly the raw 500 this error-handling chain exists to
+  // a missing `expires_in` or `access_token` silently produces an Invalid
+  // Date / a null access token below, which drizzle's timestamp encoder or
+  // the `access_token` NOT NULL constraint throws a raw (untyped) error on
+  // later - escaping the route's `instanceof TokenRefreshFailedError` guard
+  // and producing exactly the raw 500 this error-handling chain exists to
   // prevent. Fail loudly and typed here instead.
-  if (typeof data.expires_in !== 'number' || !Number.isFinite(data.expires_in)) {
-    throw new TokenRefreshFailedError(userId, `Google token endpoint response missing a valid expires_in: ${JSON.stringify(data)}`);
+  //
+  // IMPORTANT: `data` is a *successful* token response - it carries a live
+  // access_token and possibly a rotated refresh_token. Never interpolate
+  // `data` (or any of its values) into an error message/log line; only
+  // describe its shape (types, key names) so this stays safe to log.
+  if (
+    typeof data.expires_in !== 'number' ||
+    !Number.isFinite(data.expires_in) ||
+    typeof data.access_token !== 'string'
+  ) {
+    throw new TokenRefreshFailedError(
+      userId,
+      `Google token endpoint response missing a valid expires_in/access_token (expires_in: ${typeof data.expires_in}, access_token: ${typeof data.access_token}; keys: ${Object.keys(data).join(',')})`,
+    );
   }
 
   // Google does not always return a new refresh_token on a refresh call -
@@ -107,6 +120,18 @@ export async function getFreshAccessToken(userId: string): Promise<string> {
   // token is still valid and must be preserved.
   const refreshToken = data.refresh_token ?? account.refreshToken;
   const expiresAt = new Date(Date.now() + data.expires_in * 1000);
+
+  // The check above only validates that `expires_in` is a finite number -
+  // it doesn't validate the *result* of using it. Number.isFinite(1e300) is
+  // true, but new Date(Date.now() + 1e300 * 1000) is an Invalid Date, which
+  // drizzle's timestamp encoder turns into an untyped RangeError when
+  // persisting - the same escape-the-instanceof-guard problem as above.
+  if (Number.isNaN(expiresAt.getTime())) {
+    throw new TokenRefreshFailedError(
+      userId,
+      `Google token endpoint returned an out-of-range expires_in (expires_in type: ${typeof data.expires_in})`,
+    );
+  }
 
   await persistIntegrationAccount(userId, {
     accessToken: data.access_token,

@@ -175,14 +175,29 @@ describe('getFreshAccessToken', () => {
   // (Invalid Date), which drizzle's timestamp encoder throws a raw,
   // untyped RangeError on - a crash that escapes the route's
   // `instanceof TokenRefreshFailedError` guard and produces a raw 500.
-  it('throws TokenRefreshFailedError when the response is missing expires_in', async () => {
+  //
+  // It also must NOT leak the live access_token value into the error
+  // message - `data` is a *successful* token response, so only its shape
+  // (types/keys) is safe to put in a message that ends up in server logs.
+  it('throws TokenRefreshFailedError when the response is missing expires_in, without leaking the access_token value', async () => {
     mockAccountRow({ expiresAt: new Date('2020-01-01T00:00:00Z') });
+    const liveAccessToken = 'ya29.super-secret-live-access-token';
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ access_token: 'new-access-token' }),
+      json: async () => ({ access_token: liveAccessToken }),
     }) as unknown as typeof fetch;
 
-    await expect(getFreshAccessToken('user-1')).rejects.toThrow(TokenRefreshFailedError);
+    let caught: unknown;
+    try {
+      await getFreshAccessToken('user-1');
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(TokenRefreshFailedError);
+    const err = caught as TokenRefreshFailedError;
+    const fullErrorText = `${err.message} ${String(err.cause)}`;
+    expect(fullErrorText).not.toContain(liveAccessToken);
     expect(mockedPersist).not.toHaveBeenCalled();
   });
 
@@ -191,6 +206,37 @@ describe('getFreshAccessToken', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ access_token: 'new-access-token', expires_in: 'soon' }),
+    }) as unknown as typeof fetch;
+
+    await expect(getFreshAccessToken('user-1')).rejects.toThrow(TokenRefreshFailedError);
+    expect(mockedPersist).not.toHaveBeenCalled();
+  });
+
+  // Finding 1 (hardening): `Number.isFinite(1e300)` is `true`, but
+  // `new Date(Date.now() + 1e300 * 1000)` is an Invalid Date, which
+  // drizzle's timestamp encoder throws an untyped RangeError on when
+  // persisting. The *result* of the expires_in math must be validated too,
+  // not just the input's type/finiteness.
+  it('throws TokenRefreshFailedError when expires_in is finite but absurdly large', async () => {
+    mockAccountRow({ expiresAt: new Date('2020-01-01T00:00:00Z') });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'new-access-token', expires_in: 1e300 }),
+    }) as unknown as typeof fetch;
+
+    await expect(getFreshAccessToken('user-1')).rejects.toThrow(TokenRefreshFailedError);
+    expect(mockedPersist).not.toHaveBeenCalled();
+  });
+
+  // Finding 2 (hardening): a 2xx response with no access_token would
+  // otherwise pass `undefined` through to `persistIntegrationAccount`,
+  // which hits the `access_token` NOT NULL constraint and throws an
+  // untyped DB error - the same escape-the-instanceof-guard problem.
+  it('throws TokenRefreshFailedError when the response is missing access_token', async () => {
+    mockAccountRow({ expiresAt: new Date('2020-01-01T00:00:00Z') });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ expires_in: 3600 }),
     }) as unknown as typeof fetch;
 
     await expect(getFreshAccessToken('user-1')).rejects.toThrow(TokenRefreshFailedError);
