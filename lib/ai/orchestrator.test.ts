@@ -5,11 +5,12 @@ import type { checkRateLimit } from '@/lib/rate-limit';
 
 const mockInsertReturning = vi.fn();
 const mockUpdateWhere = vi.fn();
+const mockUpdateSet = vi.fn(() => ({ where: mockUpdateWhere }));
 
 vi.mock('@/db/client', () => ({
   db: {
     insert: vi.fn(() => ({ values: vi.fn(() => ({ returning: mockInsertReturning })) })),
-    update: vi.fn(() => ({ set: vi.fn(() => ({ where: mockUpdateWhere })) })),
+    update: vi.fn(() => ({ set: mockUpdateSet })),
   },
 }));
 
@@ -49,6 +50,14 @@ describe('runCommand', () => {
     expect(result.message).toBe('Moved it to Friday.');
     expect(db.insert).toHaveBeenCalledTimes(1);
     expect(db.update).toHaveBeenCalledTimes(1);
+    // Finding 8: assert on the actual persisted payload, not just that
+    // db.update was called - a bug that dropped/mis-shaped toolCalls or
+    // tokenCost while still calling .update() once would previously have
+    // slipped past this test undetected.
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      toolCalls: ['update_task'],
+      tokenCost: 120,
+    }));
   });
 
   it('returns the rate-limit message and skips the model call and agent_run insert when the bucket is exhausted', async () => {
