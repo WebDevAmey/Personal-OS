@@ -25,11 +25,19 @@ const mockGetFreshAccessToken = vi.fn().mockResolvedValue('fresh-access-token');
 vi.mock('@/lib/integrations/google/refresh-token', () => ({
   getFreshAccessToken: (userId: string) => mockGetFreshAccessToken(userId),
 }));
-const mockCreateGmailCapability = vi.fn(() => ({ search: vi.fn().mockResolvedValue([]), read: vi.fn(), draft: vi.fn() }));
+// Typed via vi.fn's generic (rather than a named-but-unused parameter on the
+// implementation itself) so the mock's call signature still accepts the
+// accessToken argument the wrapper below forwards to it - without an unused
+// parameter for eslint's argsIgnorePattern-less no-unused-vars to flag.
+const mockCreateGmailCapability = vi.fn<(accessToken: string) => { search: ReturnType<typeof vi.fn>; read: ReturnType<typeof vi.fn>; draft: ReturnType<typeof vi.fn> }>(
+  () => ({ search: vi.fn().mockResolvedValue([]), read: vi.fn(), draft: vi.fn() }),
+);
 vi.mock('@/lib/integrations/gmail/client', () => ({
   createGmailCapability: (accessToken: string) => mockCreateGmailCapability(accessToken),
 }));
-const mockCreateCalendarCapability = vi.fn(() => ({ search: vi.fn().mockResolvedValue([]) }));
+const mockCreateCalendarCapability = vi.fn<(accessToken: string) => { search: ReturnType<typeof vi.fn> }>(
+  () => ({ search: vi.fn().mockResolvedValue([]) }),
+);
 vi.mock('@/lib/integrations/calendar/client', () => ({
   createCalendarCapability: (accessToken: string) => mockCreateCalendarCapability(accessToken),
 }));
