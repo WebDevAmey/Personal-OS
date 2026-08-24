@@ -1,8 +1,14 @@
-import { generateText } from 'ai';
+import { generateObject } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
+import { z } from 'zod';
 import { searchTasks } from '@/lib/tasks/queries';
 import { inngest } from './client';
 import type { EmailCapability, CalendarCapability } from '@/lib/integrations/types';
+
+const briefingSchema = z.object({
+  attentionItems: z.array(z.string()),
+  digestItems: z.array(z.string()),
+});
 
 export async function generateBriefing(ctx: { userId: string; email: EmailCapability; calendar: CalendarCapability }) {
   const [emails, events, tasks] = await Promise.all([
@@ -11,12 +17,18 @@ export async function generateBriefing(ctx: { userId: string; email: EmailCapabi
     searchTasks(ctx.userId, { status: 'open' }),
   ]);
 
-  const result = await generateText({
+  // generateObject (schema-validated) instead of generateText + JSON.parse:
+  // raw-text JSON parsing was fragile against markdown code fences, leading
+  // prose, or truncation, and a parse failure inside step.run would trigger
+  // Inngest's retry logic (burning duplicate Claude API calls) before
+  // ultimately failing silently.
+  const result = await generateObject({
     model: anthropic('claude-sonnet-5'),
-    prompt: `Given these unread emails: ${JSON.stringify(emails)}, today's calendar: ${JSON.stringify(events)}, and open tasks: ${JSON.stringify(tasks)}, respond with strict JSON: { "attentionItems": string[], "digestItems": string[] }. attentionItems is what genuinely needs action today (max 5). digestItems is a short "things to know" summary (max 5).`,
+    schema: briefingSchema,
+    prompt: `Given these unread emails: ${JSON.stringify(emails)}, today's calendar: ${JSON.stringify(events)}, and open tasks: ${JSON.stringify(tasks)}, generate attentionItems (what genuinely needs action today, max 5) and digestItems (a short "things to know" summary, max 5).`,
   });
 
-  return JSON.parse(result.text) as { attentionItems: string[]; digestItems: string[] };
+  return result.object;
 }
 
 export const dailyBriefingFn = inngest.createFunction(
