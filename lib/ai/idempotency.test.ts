@@ -144,6 +144,53 @@ describe('withIdempotency', () => {
     );
   });
 
+  // Re-review finding: the retry insert after clearing a stale error row
+  // (previous test) was wrapped in an unconditional `catch {}` that treated
+  // ANY failure as the rare "third concurrent writer" case. If the retry
+  // insert instead fails for an unrelated reason (network blip, timeout,
+  // etc), the row is left deleted with nothing re-inserted and no record of
+  // why. The retry's catch must discriminate: only a genuine unique
+  // violation is the documented benign race; anything else must be logged
+  // so the lost bookkeeping is visible, while still returning `output`
+  // since the caller's action() did genuinely succeed.
+  it('logs and still returns output when the retry insert after clearing a stale row fails for a non-unique-violation reason', async () => {
+    let selectCallCount = 0;
+    (db.select as any).mockImplementation(() => ({
+      from: () => ({
+        where: () => {
+          selectCallCount += 1;
+          if (selectCallCount === 1) return Promise.resolve([]);
+          return Promise.resolve([{ output: { error: 'boom' }, status: 'error' }]);
+        },
+      }),
+    }));
+    const deleteWhere = vi.fn().mockResolvedValue(undefined);
+    (db.delete as any).mockReturnValue({ where: deleteWhere });
+
+    const uniqueViolation = Object.assign(
+      new Error('duplicate key value violates unique constraint "agent_actions_idempotency_key_unique"'),
+      { code: '23505' },
+    );
+    const connectionError = new Error('connection reset');
+    const values = vi.fn().mockRejectedValueOnce(uniqueViolation).mockRejectedValueOnce(connectionError);
+    (db.insert as any).mockReturnValue({ values });
+
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const action = vi.fn().mockResolvedValue({ id: 'task-mine' });
+    const result = await withIdempotency(
+      { agentRunId: 'run-1', toolName: 'create_task', idempotencyKey: 'key-stale-error-2', input: { title: 'x' } },
+      action,
+    );
+
+    expect(result).toEqual({ id: 'task-mine' });
+    expect(values).toHaveBeenCalledTimes(2);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(consoleErrorSpy.mock.calls[0].join(' ')).toContain('key-stale-error-2');
+
+    consoleErrorSpy.mockRestore();
+  });
+
   it('propagates a non-unique-constraint insert error instead of swallowing it', async () => {
     (db.select as any).mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) });
     const dbError = new Error('connection reset');

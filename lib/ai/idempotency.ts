@@ -110,13 +110,27 @@ export async function withIdempotency<T>(
           idempotencyKey: ctx.idempotencyKey,
           status: 'success',
         });
-      } catch {
-        // Extremely unlikely: a third concurrent writer raced us for the
-        // freed key in this narrow window. Don't crash the caller over a
-        // bookkeeping conflict - `output` is still a genuine, correct
-        // result from our own action() call, so return it even though we
-        // couldn't persist it here. Losing the audit row is better than
-        // losing (or re-running) a real, already-completed mutation.
+      } catch (retryErr) {
+        if (isUniqueViolation(retryErr)) {
+          // Extremely unlikely: a third concurrent writer raced us for the
+          // freed key in this narrow window. Don't crash the caller over a
+          // bookkeeping conflict - `output` is still a genuine, correct
+          // result from our own action() call, so return it even though we
+          // couldn't persist it here. Losing the audit row is better than
+          // losing (or re-running) a real, already-completed mutation.
+        } else {
+          // Some unrelated failure (network blip, timeout, etc), not a
+          // second writer racing us. The row we deleted above is gone and
+          // nothing replaced it, silently reopening the duplicate-run risk
+          // this delete-then-insert dance exists to prevent. `output` is
+          // still a genuine result from our own action() call, so return it
+          // rather than turn a real success into a thrown error - but log
+          // loudly so the lost bookkeeping is visible instead of silent.
+          console.error(
+            `[idempotency] failed to persist success row for key "${ctx.idempotencyKey}" after clearing a stale row:`,
+            retryErr,
+          );
+        }
       }
       return output;
     }
