@@ -7,13 +7,15 @@ vi.mock('@/db/client', () => ({
   db: { insert: vi.fn(), select: vi.fn() },
 }));
 
+const mockedDb = db as unknown as { insert: ReturnType<typeof vi.fn> };
+
 describe('persistIntegrationAccount', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('stores the Google access/refresh tokens and requested scopes for the user', async () => {
     const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
     const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
-    (db.insert as any).mockReturnValue({ values });
+    mockedDb.insert.mockReturnValue({ values });
 
     await persistIntegrationAccount('user-1', {
       accessToken: 'access-xyz',
@@ -49,7 +51,7 @@ describe('persistIntegrationAccount', () => {
   it('nulls out refreshToken and expiresAt when the provider omits them', async () => {
     const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
     const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
-    (db.insert as any).mockReturnValue({ values });
+    mockedDb.insert.mockReturnValue({ values });
 
     await persistIntegrationAccount('user-2', {
       accessToken: 'access-abc',
