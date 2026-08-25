@@ -1,5 +1,6 @@
 // lib/auth/otp.ts
 import bcrypt from 'bcrypt';
+import { randomInt } from 'node:crypto';
 import { Resend } from 'resend';
 import { prisma } from '@/lib/prisma';
 import type { VerificationType } from '@/lib/generated/prisma/client';
@@ -8,7 +9,10 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const OTP_TTL_MS = 10 * 60 * 1000;
 
 function generateOtp(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  // crypto.randomInt, not Math.random: the attempt-limiting on verify-otp/
+  // reset-password only bounds guessing if the code itself is unpredictable.
+  // Math.random's PRNG state is recoverable from observed outputs.
+  return String(randomInt(100000, 1000000));
 }
 
 async function issueOtp(email: string, type: VerificationType, subject: string): Promise<void> {
