@@ -1,9 +1,7 @@
 // lib/auth/session.ts
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
-import { verifySessionToken } from './jwt';
-
-export const SESSION_COOKIE = 'session';
+import { SESSION_COOKIE, verifySessionToken } from './jwt';
 
 export async function getSession(): Promise<{ userId: string } | null> {
   const cookieStore = await cookies();

@@ -3,7 +3,13 @@ import { SignJWT, jwtVerify } from 'jose';
 
 // Edge-safe: no Prisma, no bcrypt, no Node.js-only APIs. middleware.ts imports this directly.
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET!);
+export const SESSION_COOKIE = 'session';
+
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  throw new Error('JWT_SECRET must be set and at least 32 characters long');
+}
+
+const secret = new TextEncoder().encode(process.env.JWT_SECRET);
 
 export interface SessionPayload {
   userId: string;
@@ -20,7 +26,7 @@ export async function signSessionToken(payload: SessionPayload): Promise<string>
 
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
     if (typeof payload.userId !== 'string' || typeof payload.sessionVersion !== 'number') {
       return null;
     }
