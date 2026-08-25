@@ -45,11 +45,3 @@ next-env.d.ts
 .worktrees/
 
 /lib/generated/prisma
-
-# `prisma init` (v7) also vendors AI-assistant reference docs into these
-# dirs; unrelated to this project's own skill setup, not needed (we have
-# live web access for docs), left out of version control on purpose.
-/.agents/
-/.claude/
-/.windsurf/
-/skills-lock.json
