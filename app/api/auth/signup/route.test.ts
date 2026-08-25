@@ -46,4 +46,13 @@ describe('POST /api/auth/signup', () => {
     const res = await POST(req);
     expect(res.status).toBe(400);
   });
+
+  it('returns 400 for a malformed JSON body instead of throwing', async () => {
+    const req = new Request('http://localhost/api/auth/signup', {
+      method: 'POST',
+      body: 'not-json',
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
 });

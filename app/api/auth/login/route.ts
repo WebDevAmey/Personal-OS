@@ -9,7 +9,13 @@ const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
 
 export async function POST(req: Request) {
-  const parsed = LoginSchema.safeParse(await req.json());
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: 'Invalid input' }, { status: 400 });
+  }
+  const parsed = LoginSchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: 'Invalid input' }, { status: 400 });
   const { email, password } = parsed.data;
 
@@ -22,9 +28,13 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Account temporarily locked due to failed login attempts' }, { status: 423 });
   }
 
+  // A lockout that has elapsed has been served -- the attempt budget resets,
+  // it doesn't keep accumulating from before the lock.
+  const priorAttempts = user.lockedUntil ? 0 : user.failedLoginAttempts;
+
   const correct = await verifyPassword(password, user.password);
   if (!correct) {
-    const failedLoginAttempts = user.failedLoginAttempts + 1;
+    const failedLoginAttempts = priorAttempts + 1;
     const data: { failedLoginAttempts: number; lockedUntil?: Date } = { failedLoginAttempts };
     if (failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
       data.lockedUntil = new Date(Date.now() + LOCKOUT_MS);

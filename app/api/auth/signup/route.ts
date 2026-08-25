@@ -10,7 +10,12 @@ const SignUpSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const body = await req.json();
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: 'Invalid input' }, { status: 400 });
+  }
   const parsed = SignUpSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: 'Invalid input', details: parsed.error.flatten() }, { status: 400 });

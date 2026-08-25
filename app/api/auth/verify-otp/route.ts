@@ -11,7 +11,13 @@ const VerifySchema = z.object({
 const MAX_ATTEMPTS = 5;
 
 export async function POST(req: Request) {
-  const parsed = VerifySchema.safeParse(await req.json());
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: 'Invalid input' }, { status: 400 });
+  }
+  const parsed = VerifySchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: 'Invalid input' }, { status: 400 });
   const { email, code, type } = parsed.data;
 
