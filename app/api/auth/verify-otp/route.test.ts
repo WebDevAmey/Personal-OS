@@ -13,7 +13,10 @@ describe('POST /api/auth/verify-otp', () => {
   it('marks the user verified on a correct SIGN_UP code', async () => {
     const otpHash = await bcrypt.hash('123456', 10);
     const { prisma } = await import('@/lib/prisma');
-    (prisma.verificationToken.findFirst as any).mockResolvedValue({
+    const mockedPrisma = prisma as unknown as {
+      verificationToken: { findFirst: ReturnType<typeof vi.fn> };
+    };
+    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
       id: 'vt-1', email: 'a@b.com', type: 'SIGN_UP', otpHash, attempts: 0, expiresAt: new Date(Date.now() + 60000),
     });
 
@@ -31,7 +34,10 @@ describe('POST /api/auth/verify-otp', () => {
   it('rejects an incorrect code and increments attempts', async () => {
     const otpHash = await bcrypt.hash('123456', 10);
     const { prisma } = await import('@/lib/prisma');
-    (prisma.verificationToken.findFirst as any).mockResolvedValue({
+    const mockedPrisma = prisma as unknown as {
+      verificationToken: { findFirst: ReturnType<typeof vi.fn> };
+    };
+    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
       id: 'vt-1', email: 'a@b.com', type: 'SIGN_UP', otpHash, attempts: 0, expiresAt: new Date(Date.now() + 60000),
     });
 
@@ -47,7 +53,10 @@ describe('POST /api/auth/verify-otp', () => {
 
   it('rejects when no matching token exists (expired, wrong email, or already used)', async () => {
     const { prisma } = await import('@/lib/prisma');
-    (prisma.verificationToken.findFirst as any).mockResolvedValue(null);
+    const mockedPrisma = prisma as unknown as {
+      verificationToken: { findFirst: ReturnType<typeof vi.fn> };
+    };
+    mockedPrisma.verificationToken.findFirst.mockResolvedValue(null);
 
     const req = new Request('http://localhost/api/auth/verify-otp', {
       method: 'POST',
@@ -60,7 +69,10 @@ describe('POST /api/auth/verify-otp', () => {
   it('rejects when max attempts (5) have already been reached', async () => {
     const otpHash = await bcrypt.hash('123456', 10);
     const { prisma } = await import('@/lib/prisma');
-    (prisma.verificationToken.findFirst as any).mockResolvedValue({
+    const mockedPrisma = prisma as unknown as {
+      verificationToken: { findFirst: ReturnType<typeof vi.fn> };
+    };
+    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
       id: 'vt-1', email: 'a@b.com', type: 'SIGN_UP', otpHash, attempts: 5, expiresAt: new Date(Date.now() + 60000),
     });
 

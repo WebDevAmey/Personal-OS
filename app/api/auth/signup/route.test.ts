@@ -9,8 +9,11 @@ vi.mock('@/lib/auth/otp', () => ({ sendSignUpOtp: vi.fn().mockResolvedValue(unde
 describe('POST /api/auth/signup', () => {
   it('creates an unverified user and sends a sign-up OTP', async () => {
     const { prisma } = await import('@/lib/prisma');
-    (prisma.user.findUnique as any).mockResolvedValue(null);
-    (prisma.user.create as any).mockResolvedValue({ id: 'user-1', email: 'a@b.com' });
+    const mockedPrisma = prisma as unknown as {
+      user: { findUnique: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
+    };
+    mockedPrisma.user.findUnique.mockResolvedValue(null);
+    mockedPrisma.user.create.mockResolvedValue({ id: 'user-1', email: 'a@b.com' });
 
     const req = new Request('http://localhost/api/auth/signup', {
       method: 'POST',
@@ -28,7 +31,8 @@ describe('POST /api/auth/signup', () => {
 
   it('returns 409 when the email is already registered', async () => {
     const { prisma } = await import('@/lib/prisma');
-    (prisma.user.findUnique as any).mockResolvedValue({ id: 'existing' });
+    const mockedPrisma = prisma as unknown as { user: { findUnique: ReturnType<typeof vi.fn> } };
+    mockedPrisma.user.findUnique.mockResolvedValue({ id: 'existing' });
 
     const req = new Request('http://localhost/api/auth/signup', {
       method: 'POST',

@@ -35,9 +35,16 @@ export async function POST(req: Request) {
   const correct = await verifyPassword(password, user.password);
   if (!correct) {
     const failedLoginAttempts = priorAttempts + 1;
-    const data: { failedLoginAttempts: number; lockedUntil?: Date } = { failedLoginAttempts };
+    const data: { failedLoginAttempts: number; lockedUntil?: Date | null } = { failedLoginAttempts };
     if (failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
       data.lockedUntil = new Date(Date.now() + LOCKOUT_MS);
+    } else if (user.lockedUntil) {
+      // The account had a lockedUntil (necessarily expired, since an active
+      // lock already returned early above) and this failure doesn't re-lock
+      // it. That stale timestamp must be cleared here -- otherwise it stays
+      // truthy on the row, and the NEXT wrong password sees it and wrongly
+      // resets priorAttempts to 0 again, forever disabling lockout.
+      data.lockedUntil = null;
     }
     await prisma.user.update({ where: { id: user.id }, data });
     return Response.json({ error: 'Incorrect email or password' }, { status: 401 });
