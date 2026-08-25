@@ -65,13 +65,27 @@ export async function POST(req: Request) {
   }
 
   const { credential, credentialBackedUp, credentialDeviceType } = verification.registrationInfo;
+  // credential.transports is transport hints (e.g. "usb", "nfc") that are
+  // NOT part of the signed payload verifyRegistrationResponse checked above
+  // -- it's outside the cryptographic guarantee, so a malformed value here
+  // could still reach Prisma's String[] column and throw an unhandled
+  // PrismaClientValidationError. Degrade to an empty array instead of
+  // crashing.
+  // Widen to `unknown` first -- the library's own type says this is already
+  // AuthenticatorTransportFuture[], but that type is not something the
+  // signature verification above actually enforces, so it can't be trusted
+  // at runtime.
+  const rawTransports: unknown = credential.transports;
+  const transports = Array.isArray(rawTransports)
+    ? rawTransports.filter((t): t is string => typeof t === 'string')
+    : [];
   await prisma.passkeyCredential.create({
     data: {
       id: credential.id,
       userId: session.userId,
       publicKey: Buffer.from(credential.publicKey),
       counter: credential.counter,
-      transports: credential.transports ?? [],
+      transports,
       backedUp: credentialBackedUp,
       deviceType: credentialDeviceType,
       name,

@@ -200,4 +200,68 @@ describe('POST /api/auth/passkey/register/verify', () => {
     const res = await POST(req({ name: 'My laptop' }));
     expect(res.status).toBe(400);
   });
+
+  // credential.transports is transport hints, NOT part of the signed payload
+  // verifyRegistrationResponse validates -- a malformed value here must
+  // degrade to an empty array instead of reaching Prisma's String[] column
+  // and throwing an unhandled PrismaClientValidationError.
+  it('stores an empty transports array when credential.transports is malformed', async () => {
+    const { getSession } = (await import('@/lib/auth/session')) as unknown as MockedSession;
+    getSession.mockResolvedValue({ userId: 'user-1' });
+
+    const { prisma } = (await import('@/lib/prisma')) as unknown as { prisma: MockedPrisma };
+    prisma.webAuthnChallenge.findFirst.mockResolvedValue({ id: 'ch-1', challenge: 'challenge-str' });
+
+    const { verifyRegistrationResponse } = (await import('@simplewebauthn/server')) as unknown as MockedWebAuthn;
+    verifyRegistrationResponse.mockResolvedValue({
+      verified: true,
+      registrationInfo: {
+        credential: {
+          id: 'cred-1',
+          publicKey: new Uint8Array([1, 2, 3]),
+          counter: 0,
+          transports: 'not-an-array',
+        },
+        credentialBackedUp: true,
+        credentialDeviceType: 'singleDevice',
+      },
+    });
+
+    const res = await POST(req({ response: {}, name: 'My laptop' }));
+
+    expect(res.status).toBe(200);
+    expect(prisma.passkeyCredential.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ transports: [] }),
+    }));
+  });
+
+  it('filters out non-string entries from a partially malformed transports array', async () => {
+    const { getSession } = (await import('@/lib/auth/session')) as unknown as MockedSession;
+    getSession.mockResolvedValue({ userId: 'user-1' });
+
+    const { prisma } = (await import('@/lib/prisma')) as unknown as { prisma: MockedPrisma };
+    prisma.webAuthnChallenge.findFirst.mockResolvedValue({ id: 'ch-1', challenge: 'challenge-str' });
+
+    const { verifyRegistrationResponse } = (await import('@simplewebauthn/server')) as unknown as MockedWebAuthn;
+    verifyRegistrationResponse.mockResolvedValue({
+      verified: true,
+      registrationInfo: {
+        credential: {
+          id: 'cred-1',
+          publicKey: new Uint8Array([1, 2, 3]),
+          counter: 0,
+          transports: ['internal', 42, null],
+        },
+        credentialBackedUp: true,
+        credentialDeviceType: 'singleDevice',
+      },
+    });
+
+    const res = await POST(req({ response: {}, name: 'My laptop' }));
+
+    expect(res.status).toBe(200);
+    expect(prisma.passkeyCredential.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ transports: ['internal'] }),
+    }));
+  });
 });
