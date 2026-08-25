@@ -5,7 +5,13 @@
 // config did (see auth.ts) — the rest of this app's Gmail/Calendar
 // integration depends on that scope bundling happening at sign-in, since
 // there is no separate "connect Google" flow.
-const SCOPES = [
+//
+// Exported so the callback route can fall back to "what we asked for" when
+// Google's token response omits `scope` (see GoogleTokenResponse below) —
+// that only happens on a token refresh, never on the initial exchange this
+// callback handles, but the fallback keeps the two in sync by construction
+// rather than by a second hand-maintained literal.
+export const SCOPES = [
   'openid', 'email', 'profile',
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.compose',
@@ -34,6 +40,12 @@ export interface GoogleTokenResponse {
   refresh_token?: string;
   expires_in: number;
   id_token: string;
+  // Space-delimited list of scopes Google actually granted, which can be a
+  // strict subset of what was requested if the user declined some at the
+  // consent screen. Optional because Google omits it in some responses
+  // (callers should fall back to the requested SCOPES string, not assume
+  // "everything was granted").
+  scope?: string;
 }
 
 export async function exchangeGoogleCode(code: string): Promise<GoogleTokenResponse> {
@@ -59,6 +71,15 @@ export interface GoogleIdTokenClaims {
   email: string;
   name?: string;
   picture?: string;
+  // Google's proof that `email` was actually verified as belonging to this
+  // account (e.g. via a confirmation link), as opposed to merely being an
+  // address the account holder typed in somewhere. Google can return
+  // `email_verified: false` for a real, completable OAuth flow — callers
+  // MUST reject unverified emails before using them for account lookup or
+  // linking, or an attacker can take over any victim's account by signing
+  // up at a third party with the victim's (unverified) email address and
+  // then "signing in with Google" here.
+  email_verified?: boolean;
 }
 
 export function decodeGoogleIdToken(idToken: string): GoogleIdTokenClaims {
