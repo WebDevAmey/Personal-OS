@@ -1,20 +1,26 @@
-import { db } from '@/db/client';
-import { integrationAccounts } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
-import { persistIntegrationAccount } from '@/lib/auth/persist-integration-account';
+// lib/integrations/google/refresh-token.ts
+//
+// Ported from the Drizzle-era version (same file path, same public shape) to
+// read/write the new Prisma-managed `IntegrationAccount` table instead of
+// Drizzle's `integration_accounts`. Consumers (app/api/command/route.ts,
+// inngest/daily-briefing.ts) import only `getFreshAccessToken`,
+// `NoIntegrationAccountError`, and `TokenRefreshFailedError` — their public
+// shape (constructor arity included) is preserved unchanged here so those
+// call sites, and their existing tests, keep working without modification.
+import { prisma } from '@/lib/prisma';
 
 /** How long before actual expiry we treat a token as needing a refresh. */
 const REFRESH_SAFETY_MARGIN_MS = 5 * 60 * 1000;
 
 /**
- * Thrown when the given user has no `google` row in `integration_accounts`
- * at all. Distinct from `TokenRefreshFailedError` so callers can show a
+ * Thrown when the given user has no `google` row in `IntegrationAccount` at
+ * all. Distinct from `TokenRefreshFailedError` so callers can show a
  * "connect your Google account" message instead of a generic error - the
  * user has literally never (or no longer) has a linked Google account.
  */
 export class NoIntegrationAccountError extends Error {
   constructor(userId: string) {
-    super(`No google integration_accounts row for user ${userId}`);
+    super(`No google IntegrationAccount row for user ${userId}`);
     this.name = 'NoIntegrationAccountError';
   }
 }
@@ -25,6 +31,11 @@ export class NoIntegrationAccountError extends Error {
  * refresh token (revoked/expired), or there's no refresh token stored to
  * use in the first place. Callers should surface a "reconnect your Google
  * account" message, same as `NoIntegrationAccountError`.
+ *
+ * `cause`, when present, is a human-readable description of *what* failed
+ * (an HTTP status, a response shape) - never the live token values
+ * themselves. See the `expires_in`/`access_token` validation below for why
+ * that distinction matters.
  */
 export class TokenRefreshFailedError extends Error {
   constructor(userId: string, cause?: unknown) {
@@ -49,13 +60,13 @@ interface GoogleTokenResponse {
  * Returns a Google access token for `userId` that is safe to use right now,
  * refreshing it via Google's token endpoint first if the stored token is
  * missing an expiry, already expired, or within `REFRESH_SAFETY_MARGIN_MS`
- * of expiring. Reuses `persistIntegrationAccount` to write any refreshed
- * token back so future calls (and other readers of `integration_accounts`)
- * see the update.
+ * of expiring. Persists any refreshed token back to `IntegrationAccount` so
+ * future calls (and other readers of that table) see the update.
  */
 export async function getFreshAccessToken(userId: string): Promise<string> {
-  const [account] = await db.select().from(integrationAccounts)
-    .where(and(eq(integrationAccounts.userId, userId), eq(integrationAccounts.provider, 'google')));
+  const account = await prisma.integrationAccount.findUnique({
+    where: { userId_provider: { userId, provider: 'google' } },
+  });
 
   if (!account) {
     throw new NoIntegrationAccountError(userId);
@@ -75,8 +86,8 @@ export async function getFreshAccessToken(userId: string): Promise<string> {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: process.env.AUTH_GOOGLE_ID!,
-        client_secret: process.env.AUTH_GOOGLE_SECRET!,
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
         refresh_token: account.refreshToken,
         grant_type: 'refresh_token',
       }),
@@ -94,8 +105,8 @@ export async function getFreshAccessToken(userId: string): Promise<string> {
 
   // Guard against a malformed/incomplete response from Google: without this,
   // a missing `expires_in` or `access_token` silently produces an Invalid
-  // Date / a null access token below, which drizzle's timestamp encoder or
-  // the `access_token` NOT NULL constraint throws a raw (untyped) error on
+  // Date / a null access token below, which Prisma's DateTime encoder or the
+  // `accessToken` NOT NULL constraint throws a raw (untyped) error on
   // later - escaping the route's `instanceof TokenRefreshFailedError` guard
   // and producing exactly the raw 500 this error-handling chain exists to
   // prevent. Fail loudly and typed here instead.
@@ -124,8 +135,8 @@ export async function getFreshAccessToken(userId: string): Promise<string> {
   // The check above only validates that `expires_in` is a finite number -
   // it doesn't validate the *result* of using it. Number.isFinite(1e300) is
   // true, but new Date(Date.now() + 1e300 * 1000) is an Invalid Date, which
-  // drizzle's timestamp encoder turns into an untyped RangeError when
-  // persisting - the same escape-the-instanceof-guard problem as above.
+  // Prisma's DateTime encoder turns into an untyped error when persisting -
+  // the same escape-the-instanceof-guard problem as above.
   if (Number.isNaN(expiresAt.getTime())) {
     throw new TokenRefreshFailedError(
       userId,
@@ -133,11 +144,13 @@ export async function getFreshAccessToken(userId: string): Promise<string> {
     );
   }
 
-  await persistIntegrationAccount(userId, {
-    accessToken: data.access_token,
-    refreshToken,
-    scopes: account.scopes,
-    expiresAt,
+  await prisma.integrationAccount.update({
+    where: { userId_provider: { userId, provider: 'google' } },
+    data: {
+      accessToken: data.access_token,
+      refreshToken,
+      expiresAt,
+    },
   });
 
   return data.access_token;
