@@ -6,6 +6,8 @@ import { hashPassword } from '@/lib/auth/password';
 
 const Schema = z.object({ email: z.string().email(), code: z.string().length(6), newPassword: z.string().min(8) });
 
+const MAX_ATTEMPTS = 5;
+
 export async function POST(req: Request) {
   let body: unknown;
   try {
@@ -24,9 +26,15 @@ export async function POST(req: Request) {
   if (!token) {
     return Response.json({ error: 'Code expired or not found. Request a new one.' }, { status: 400 });
   }
+  // Cap guesses per token so a 6-digit code (1,000,000 possibilities) can't be
+  // brute-forced within its 10-minute validity window (mirrors verify-otp).
+  if (token.attempts >= MAX_ATTEMPTS) {
+    return Response.json({ error: 'Too many incorrect attempts. Request a new code.' }, { status: 400 });
+  }
 
   const correct = await bcrypt.compare(code, token.otpHash);
   if (!correct) {
+    await prisma.verificationToken.update({ where: { id: token.id }, data: { attempts: token.attempts + 1 } });
     return Response.json({ error: 'Incorrect code' }, { status: 400 });
   }
 
