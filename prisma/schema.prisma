@@ -1,0 +1,189 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                  String              @id @default(cuid())
+  email               String              @unique
+  emailVerified       Boolean             @default(false)
+  password            String?
+  googleId            String?             @unique
+  githubId            String?             @unique
+  name                String?
+  image               String?
+  sessionVersion      Int                 @default(0)
+  failedLoginAttempts Int                 @default(0)
+  lockedUntil         DateTime?
+  integrationAccounts IntegrationAccount[]
+  tasks               Task[]
+  memories            Memory[]
+  dailyBriefings      DailyBriefing[]
+  agentRuns           AgentRun[]
+  passkeyCredentials  PasskeyCredential[]
+  authEvents          AuthEvent[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+}
+
+model PasskeyCredential {
+  id         String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicKey  Bytes
+  transports String[]
+  counter    Int       @default(0)
+  backedUp   Boolean   @default(false)
+  deviceType String
+  name       String?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model WebAuthnChallenge {
+  id        String   @id @default(cuid())
+  userId    String?
+  challenge String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+enum VerificationType {
+  SIGN_UP
+  PASSWORD_RESET
+}
+
+model VerificationToken {
+  id        String            @id @default(cuid())
+  email     String
+  type      VerificationType
+  otpHash   String
+  payload   Json?
+  attempts  Int               @default(0)
+  expiresAt DateTime
+  createdAt DateTime          @default(now())
+
+  @@index([email, type])
+}
+
+model RateLimitAttempt {
+  key         String   @id
+  count       Int      @default(1)
+  windowStart DateTime @default(now())
+
+  @@index([windowStart])
+}
+
+enum AuthEventType {
+  SIGN_UP
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  ACCOUNT_LOCKED
+  LOGOUT
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
+  OAUTH_LINKED
+  PASSKEY_ADDED
+  PASSKEY_REMOVED
+}
+
+model AuthEvent {
+  id        String        @id @default(cuid())
+  type      AuthEventType
+  userId    String?
+  user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email     String?
+  ip        String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime      @default(now())
+
+  @@index([userId])
+  @@index([type, createdAt])
+  @@index([email])
+}
+
+model IntegrationAccount {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     String
+  accessToken  String
+  refreshToken String?
+  scopes       String
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@unique([userId, provider])
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  notes       String?
+  dueDate     DateTime?
+  status      String    @default("open")
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Memory {
+  id                          String                      @id @default(cuid())
+  userId                      String
+  user                        User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content                     String
+  embedding                   Unsupported("vector(512)")?
+  createdAt                   DateTime                    @default(now())
+
+  @@index([userId])
+}
+
+model DailyBriefing {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  briefingDate   String
+  attentionItems Json
+  digestItems    Json
+  generatedAt    DateTime @default(now())
+
+  @@index([userId, generatedAt])
+}
+
+model AgentRun {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  input       String
+  toolCalls   Json?
+  latencyMs   Int?
+  tokenCost   Int?
+  actions     AgentAction[]
+  createdAt   DateTime      @default(now())
+}
+
+model AgentAction {
+  id             String   @id @default(cuid())
+  agentRunId     String
+  agentRun       AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  toolName       String
+  input          Json?
+  output         Json?
+  idempotencyKey String   @unique
+  status         String
+  createdAt      DateTime @default(now())
+}
