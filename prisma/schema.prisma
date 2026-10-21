@@ -1,4 +1,10 @@
 // prisma/schema.prisma
+//
+// Target model per docs/03-data-model.md. Objects Prisma cannot express
+// (HNSW vector index, partial unique indexes, CHECK constraints, the
+// full-text expression index) live in hand-written migration SQL and are
+// listed in docs/03 §5.3. Never let a generated migration drop them.
+
 generator client {
   provider = "prisma-client"
   output   = "../lib/generated/prisma"
@@ -8,27 +14,69 @@ datasource db {
   provider = "postgresql"
 }
 
+// ───────────────────────────── Identity ─────────────────────────────
+
 model User {
-  id                  String              @id @default(cuid())
-  email               String              @unique
-  emailVerified       Boolean             @default(false)
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  emailVerified       Boolean              @default(false)
   password            String?
-  googleId            String?             @unique
-  githubId            String?             @unique
+  googleId            String?              @unique
+  githubId            String?              @unique
   name                String?
   image               String?
-  sessionVersion      Int                 @default(0)
-  failedLoginAttempts Int                 @default(0)
+  sessionVersion      Int                  @default(0)
+  failedLoginAttempts Int                  @default(0)
   lockedUntil         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  preference          UserPreference?
   integrationAccounts IntegrationAccount[]
+  passkeyCredentials  PasskeyCredential[]
+  webAuthnChallenges  WebAuthnChallenge[]
+  authEvents          AuthEvent[]
+  auditEvents         AuditEvent[]
+  projects            Project[]
   tasks               Task[]
+  taskDependencies    TaskDependency[]
+  taskEvents          TaskEvent[]
+  taskOperations      TaskOperation[]
+  reminders           Reminder[]
   memories            Memory[]
+  briefingRuns        BriefingRun[]
   dailyBriefings      DailyBriefing[]
   agentRuns           AgentRun[]
-  passkeyCredentials  PasskeyCredential[]
-  authEvents          AuthEvent[]
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  proposedActions     ProposedAction[]
+  agentActions        AgentAction[]
+}
+
+enum MotionPreference {
+  SYSTEM
+  REDUCE
+  FULL
+}
+
+model UserPreference {
+  userId                   String           @id
+  user                     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timeZone                 String           @default("UTC") // IANA; validated with Intl in lib/preferences
+  locale                   String           @default("en-US")
+  weekStart                Int              @default(1) // 0 = Sunday … 6 = Saturday (CHECK)
+  briefingHour             Int              @default(6) // 0–23 (CHECK)
+  briefingMinute           Int              @default(30) // 0–59 (CHECK)
+  workdayStart             String? // "HH:mm"; null ⇒ "morning" phrases need clarification (ADR-008)
+  workdayEnd               String? // "HH:mm"
+  lunchEndsAt              String? // "HH:mm"; null ⇒ "after lunch" needs clarification
+  reminderEmailEnabled     Boolean          @default(true)
+  briefingWebSearchEnabled Boolean          @default(false)
+  speechOutputEnabled      Boolean          @default(false)
+  reducedMotion            MotionPreference @default(SYSTEM)
+  version                  Int              @default(1)
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+
+  @@index([timeZone])
 }
 
 model PasskeyCredential {
@@ -37,9 +85,10 @@ model PasskeyCredential {
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   publicKey  Bytes
   transports String[]
-  counter    Int       @default(0)
+  counter    Int       @default(0) // kept Int (additive-only rule); BigInt widening is a later WS-2 change
   backedUp   Boolean   @default(false)
   deviceType String
+  aaguid     String?
   name       String?
   lastUsedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -47,14 +96,24 @@ model PasskeyCredential {
   @@index([userId])
 }
 
+enum WebAuthnPurpose {
+  REGISTRATION
+  AUTHENTICATION
+}
+
 model WebAuthnChallenge {
-  id        String   @id @default(cuid())
-  userId    String?
-  challenge String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id          String          @id @default(cuid())
+  purpose     WebAuthnPurpose @default(REGISTRATION)
+  userId      String?
+  user        User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge   String          @unique
+  bindingHash String?
+  expiresAt   DateTime
+  createdAt   DateTime        @default(now())
 
   @@index([expiresAt])
+  @@index([userId, purpose])
+  @@index([bindingHash])
 }
 
 enum VerificationType {
@@ -63,16 +122,17 @@ enum VerificationType {
 }
 
 model VerificationToken {
-  id        String            @id @default(cuid())
+  id        String           @id @default(cuid())
   email     String
   type      VerificationType
   otpHash   String
   payload   Json?
-  attempts  Int               @default(0)
+  attempts  Int              @default(0)
   expiresAt DateTime
-  createdAt DateTime          @default(now())
+  createdAt DateTime         @default(now())
 
-  @@index([email, type])
+  @@index([email, type, createdAt])
+  @@index([expiresAt])
 }
 
 model RateLimitAttempt {
@@ -94,6 +154,17 @@ enum AuthEventType {
   OAUTH_LINKED
   PASSKEY_ADDED
   PASSKEY_REMOVED
+  LOGIN_RATE_LIMITED
+  OTP_SENT
+  OTP_VERIFIED
+  OTP_FAILED
+  OAUTH_LOGIN_SUCCESS
+  OAUTH_LOGIN_FAILURE
+  PASSKEY_LOGIN_SUCCESS
+  PASSKEY_LOGIN_FAILURE
+  SESSIONS_REVOKED
+  INTEGRATION_CONNECTED
+  INTEGRATION_DISCONNECTED
 }
 
 model AuthEvent {
@@ -104,86 +175,486 @@ model AuthEvent {
   email     String?
   ip        String?
   userAgent String?
+  requestId String?
   metadata  Json?
   createdAt DateTime      @default(now())
 
-  @@index([userId])
+  @@index([userId, createdAt])
   @@index([type, createdAt])
-  @@index([email])
+  @@index([email, createdAt])
+  @@index([createdAt])
+}
+
+// ─────────────────────────── Integrations ───────────────────────────
+
+enum IntegrationStatus {
+  ACTIVE
+  NEEDS_REAUTH // refresh failed / revoked → UI shows "Reconnect Google"
+  DISCONNECTED
 }
 
 model IntegrationAccount {
-  id           String    @id @default(cuid())
-  userId       String
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider     String
-  accessToken  String
-  refreshToken String?
-  scopes       String
-  expiresAt    DateTime?
-  createdAt    DateTime  @default(now())
+  id                String            @id @default(cuid())
+  userId            String
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          String
+  providerAccountId String?
+  accountEmail      String?
+  accessToken       String // ADR-011 ciphertext "v1:…"
+  refreshToken      String? // same format
+  scopes            String
+  expiresAt         DateTime?
+  status            IntegrationStatus @default(ACTIVE)
+  lastRefreshedAt   DateTime?
+  lastErrorCode     String?
+  lastErrorAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @default(now()) @updatedAt
 
   @@unique([userId, provider])
+  @@index([provider, status])
 }
 
-model Task {
+// ───────────────────────────── Planning ─────────────────────────────
+
+model Project {
   id          String    @id @default(cuid())
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title       String
-  notes       String?
-  dueDate     DateTime?
-  status      String    @default("open")
-  completedAt DateTime?
+  name        String
+  description String?
+  color       String?
+  sortOrder   Int       @default(0)
+  archivedAt  DateTime?
+  deletedAt   DateTime?
+  version     Int       @default(1)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  tasks       Task[]
 
+  @@index([userId, archivedAt])
+  // raw SQL: UNIQUE ("userId", lower("name")) WHERE "deletedAt" IS NULL
+}
+
+enum TaskStatus {
+  INBOX
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TaskSource {
+  MANUAL
+  COMMAND
+  VOICE
+  EMAIL
+  BRIEFING
+}
+
+model Task {
+  id                 String     @id @default(cuid())
+  userId             String
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId          String?
+  project            Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  parentId           String?
+  parent             Task?      @relation("Subtasks", fields: [parentId], references: [id], onDelete: SetNull)
+  subtasks           Task[]     @relation("Subtasks")
+  title              String
+  description        String? // renamed from `notes`
+  status             TaskStatus @default(TODO)
+  priority           Int        @default(0) // 0 NONE · 1 LOW · 2 MEDIUM · 3 HIGH · 4 URGENT (CHECK)
+  dueAt              DateTime? // renamed from `dueDate`
+  dueHasTime         Boolean    @default(false) // false ⇒ floating calendar date at 00:00Z
+  startAt            DateTime?
+  timeZone           String?
+  estimateMinutes    Int?
+  tags               String[]   @default([])
+  recurrenceRule     String?
+  recurrenceSeriesId String?
+  snoozedUntil       DateTime?
+  source             TaskSource @default(MANUAL)
+  sourceRef          String?
+  completedAt        DateTime?
+  archivedAt         DateTime?
+  deletedAt          DateTime?
+  version            Int        @default(1)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  dependencies TaskDependency[] @relation("TaskDependsOn")
+  dependents   TaskDependency[] @relation("TaskBlocks")
+  reminders    Reminder[]
+  events       TaskEvent[]
+
+  @@index([userId, status, dueAt])
+  @@index([userId, deletedAt])
+  @@index([userId, projectId])
+  @@index([userId, updatedAt])
+  @@index([userId, snoozedUntil])
+  @@index([userId, startAt])
+  @@index([userId, completedAt])
+  @@index([parentId])
+  @@index([recurrenceSeriesId])
+  @@index([userId, source, sourceRef])
+  @@index([tags], type: Gin)
+  // raw SQL: CHECK priority 0..4, CHECK estimateMinutes > 0,
+  //          UNIQUE (recurrenceSeriesId) WHERE open and not deleted,
+  //          GIN full-text index on title + description
+}
+
+model TaskDependency {
+  taskId      String
+  task        Task     @relation("TaskDependsOn", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnId String
+  dependsOn   Task     @relation("TaskBlocks", fields: [dependsOnId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@id([taskId, dependsOnId])
+  @@index([dependsOnId])
   @@index([userId])
+  // raw SQL: CHECK ("taskId" <> "dependsOnId"); cycles rejected in lib/tasks/repo
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum ReminderChannel {
+  IN_APP
+  EMAIL
+}
+
+model Reminder {
+  id        String          @id @default(cuid())
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId    String?
+  task      Task?           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  title     String
+  sourceRef String?
+  remindAt  DateTime
+  channel   ReminderChannel @default(IN_APP)
+  status    ReminderStatus  @default(PENDING)
+  sentAt    DateTime?
+  seenAt    DateTime?
+  attempts  Int             @default(0)
+  lastError String?
+  version   Int             @default(1)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([userId, status, remindAt])
+  @@index([status, remindAt])
+  @@index([taskId])
+}
+
+enum ActorType {
+  USER
+  AGENT
+  SYSTEM
+}
+
+enum TaskEventType {
+  IMPORTED
+  CREATED
+  UPDATED
+  STATUS_CHANGED
+  COMPLETED
+  REOPENED
+  SNOOZED
+  MOVED
+  ARCHIVED
+  UNARCHIVED
+  DELETED
+  RESTORED
+  DEPENDENCY_ADDED
+  DEPENDENCY_REMOVED
+  REMINDER_SET
+  REMINDER_CLEARED
+  RECURRENCE_ROLLED
+  UNDONE
+}
+
+model TaskEvent {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId           String
+  task             Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  type             TaskEventType
+  actorType        ActorType
+  source           TaskSource      @default(MANUAL)
+  agentRunId       String?
+  agentRun         AgentRun?       @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  proposedActionId String?
+  proposedAction   ProposedAction? @relation(fields: [proposedActionId], references: [id], onDelete: SetNull)
+  operationId      String? // caller idempotency key (TaskOperation)
+  batchId          String? // shared by every event of one bulk apply
+  revertsEventId   String?         @unique // set on UNDONE; one undo per event
+  before           Json?
+  after            Json?
+  taskVersion      Int
+  requestId        String?
+  createdAt        DateTime        @default(now())
+
+  @@index([taskId, createdAt])
+  @@index([userId, createdAt])
+  @@index([proposedActionId])
+  @@index([userId, batchId])
+}
+
+// Idempotency ledger for task mutations: one row per (userId, operationId).
+// Claimed with INSERT … ON CONFLICT DO NOTHING inside the mutating
+// transaction, so a replay (or a concurrent duplicate) returns the stored
+// result instead of applying the mutation twice.
+model TaskOperation {
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  operationId String
+  kind        String
+  result      Json?
+  createdAt   DateTime @default(now())
+
+  @@id([userId, operationId])
+  @@index([createdAt])
+}
+
+// ───────────────────────────── Memory ─────────────────────────────
+
+enum MemorySource {
+  COMMAND
+  MANUAL
+  IMPORTED
 }
 
 model Memory {
-  id                          String                      @id @default(cuid())
-  userId                      String
-  user                        User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  content                     String
-  embedding                   Unsupported("vector(512)")?
-  createdAt                   DateTime                    @default(now())
+  id             String                      @id @default(cuid())
+  userId         String
+  user           User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content        String
+  embedding      Unsupported("vector(512)")?
+  embeddingModel String                      @default("voyage-3-lite")
+  source         MemorySource                @default(COMMAND)
+  deletedAt      DateTime?
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @default(now()) @updatedAt
 
-  @@index([userId])
+  @@index([userId, createdAt])
+  // raw SQL: HNSW "Memory_embedding_hnsw_idx" USING hnsw (embedding vector_cosine_ops)
+}
+
+// ───────────────────────────── Briefing ─────────────────────────────
+
+enum BriefingRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  PARTIAL
+}
+
+enum BriefingTrigger {
+  SCHEDULED
+  PAGE_LOAD
+  RETRY
+  LEGACY
+}
+
+model BriefingRun {
+  id            String            @id @default(cuid())
+  userId        String
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  localDate     DateTime          @db.Date
+  timeZone      String
+  status        BriefingRunStatus @default(PENDING)
+  trigger       BriefingTrigger
+  attempts      Int               @default(0)
+  failedSources String[]          @default([])
+  sourceStatus  Json?
+  errorCode     String?
+  model         String?
+  inputTokens   Int?
+  outputTokens  Int?
+  metrics       Json? // {droppedUngrounded, itemCount, …}
+  inngestRunId  String?
+  requestId     String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  briefing      DailyBriefing?
+
+  @@unique([userId, localDate])
+  @@index([status, updatedAt])
 }
 
 model DailyBriefing {
-  id             String   @id @default(cuid())
+  id             String      @id @default(cuid())
   userId         String
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  briefingDate   String
-  attentionItems Json
-  digestItems    Json
-  generatedAt    DateTime @default(now())
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  briefingRunId  String      @unique
+  briefingRun    BriefingRun @relation(fields: [briefingRunId], references: [id], onDelete: Cascade)
+  localDate      DateTime    @db.Date // was briefingDate TEXT
+  schemaVersion  Int         @default(2)
+  items          Json
+  attentionItems Json?
+  digestItems    Json?
+  generatedAt    DateTime    @default(now())
 
-  @@index([userId, generatedAt])
+  @@index([userId, localDate])
+}
+
+// ───────────────────────── Command pipeline ─────────────────────────
+
+enum AgentRunStatus {
+  RUNNING
+  SUCCEEDED
+  AWAITING_CONFIRMATION
+  NEEDS_CLARIFICATION
+  FAILED
+  RATE_LIMITED
+}
+
+enum InputModality {
+  TEXT
+  VOICE
 }
 
 model AgentRun {
-  id          String        @id @default(cuid())
-  userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  input       String
-  toolCalls   Json?
-  latencyMs   Int?
-  tokenCost   Int?
-  actions     AgentAction[]
-  createdAt   DateTime      @default(now())
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientRequestId String?
+  clarifiesRunId  String?
+  input           String
+  modality        InputModality    @default(TEXT)
+  status          AgentRunStatus   @default(RUNNING)
+  intent          String?
+  model           String?
+  promptVersion   String?
+  stepCount       Int?
+  toolTrace       Json?
+  toolCalls       Json?
+  result          Json? // stored response for clientRequestId replay
+  errorCode       String?
+  latencyMs       Int?
+  inputTokens     Int?
+  outputTokens    Int?
+  tokenCost       Int?
+  requestId       String?
+  finishedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @default(now()) @updatedAt
+  proposals       ProposedAction[]
+  actions         AgentAction[]
+  taskEvents      TaskEvent[]
+
+  @@unique([userId, clientRequestId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+enum RiskClass {
+  READ
+  REVERSIBLE
+  CONSEQUENTIAL
+  DESTRUCTIVE
+  BULK
+  EXTERNAL
+}
+
+enum ProposalStatus {
+  PENDING // validated, waiting for policy / user confirmation
+  NEEDS_CLARIFICATION // partially resolved args stored, waiting for an option
+  EXECUTING // claimed by an executor (CAS lock)
+  EXECUTED
+  CANCELLED
+  EXPIRED
+  FAILED
+}
+
+model ProposedAction {
+  id                   String         @id @default(cuid())
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentRunId           String
+  agentRun             AgentRun       @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  kind                 String // tool / executor name, e.g. "task.update"
+  args                 Json
+  summary              String
+  diff                 Json?
+  risk                 RiskClass
+  targetIds            String[]       @default([])
+  targetVersions       Json? // {taskId: version}
+  tainted              Boolean        @default(false)
+  untrustedSources     String[]       @default([])
+  requiresConfirmation Boolean        @default(false)
+  confirmationReason   String?
+  status               ProposalStatus @default(PENDING)
+  expiresAt            DateTime
+  confirmedAt          DateTime?
+  executedAt           DateTime?
+  result               Json?
+  errorCode            String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  actions              AgentAction[]
+  taskEvents           TaskEvent[]
+
+  @@index([userId, status, createdAt])
+  @@index([agentRunId])
+  @@index([status, expiresAt])
+}
+
+enum AgentActionStatus {
+  SUCCESS
+  ERROR
 }
 
 model AgentAction {
-  id             String   @id @default(cuid())
-  agentRunId     String
-  agentRun       AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
-  toolName       String
-  input          Json?
-  output         Json?
-  idempotencyKey String   @unique
-  status         String
-  createdAt      DateTime @default(now())
+  id               String            @id @default(cuid())
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentRunId       String
+  agentRun         AgentRun          @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  proposedActionId String?
+  proposedAction   ProposedAction?   @relation(fields: [proposedActionId], references: [id], onDelete: Cascade)
+  toolName         String
+  input            Json?
+  output           Json?
+  idempotencyKey   String            @unique
+  status           AgentActionStatus
+  durationMs       Int?
+  createdAt        DateTime          @default(now())
+
+  @@index([agentRunId])
+  @@index([userId, createdAt])
+}
+
+// ───────────────────────────── Audit ─────────────────────────────
+
+model AuditEvent {
+  id         String    @id @default(cuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  actorType  ActorType
+  action     String
+  entityType String
+  entityId   String?
+  agentRunId String?
+  proposalId String?
+  requestId  String?
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }
