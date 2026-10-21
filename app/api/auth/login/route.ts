@@ -1,66 +1,84 @@
 // app/api/auth/login/route.ts
+// Password sign-in (docs/02 §3.1).
+//
+// - CSRF: same-origin + JSON required (login CSRF, SEC-B-010).
+// - ADR-012 limits per IP and per email hash → 429 with Retry-After.
+// - Unknown email, OAuth-only account, wrong password and locked account all
+//   return the same 401 body after the same bcrypt work (SEC-B-006).
+// - Attempts are reserved atomically before bcrypt runs, so parallel guesses
+//   cannot exceed the lockout budget (SEC-B-001).
+// - A fresh session token is minted on every successful sign-in.
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma';
-import { verifyPassword } from '@/lib/auth/password';
-import { signSessionToken } from '@/lib/auth/jwt';
+import { burnPasswordCheck, LoginPasswordSchema, verifyPassword } from '@/lib/auth/password';
+import { clearFailedAttempts, reservePasswordAttempt } from '@/lib/auth/lockout';
+import { EmailSchema, findUserByEmail, invalidInput, noStoreHeaders, readJson } from '@/lib/auth/http';
+import { createSessionCookie } from '@/lib/auth/session';
+import { csrfGuard } from '@/lib/security/csrf';
+import { checkAuthRateLimit, rateLimitedResponse } from '@/lib/security/auth-rate-limit';
+import { clientIp } from '@/lib/security/request-meta';
+import { recordAuthEvent } from '@/lib/audit/auth-events';
 
-const LoginSchema = z.object({ email: z.string().email(), password: z.string() });
-const MAX_FAILED_ATTEMPTS = 5;
-const LOCKOUT_MS = 15 * 60 * 1000;
+const LoginSchema = z.object({ email: EmailSchema, password: LoginPasswordSchema });
+
+const GENERIC_FAILURE = 'Incorrect email or password';
+
+function failure(): Response {
+  return Response.json({ error: GENERIC_FAILURE }, { status: 401, headers: noStoreHeaders() });
+}
 
 export async function POST(req: Request) {
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: 'Invalid input' }, { status: 400 });
+  const blocked = csrfGuard(req);
+  if (blocked) {
+    await recordAuthEvent({ event: 'CSRF_BLOCKED', req, metadata: { route: 'login' } });
+    return blocked;
   }
-  const parsed = LoginSchema.safeParse(body);
-  if (!parsed.success) return Response.json({ error: 'Invalid input' }, { status: 400 });
+
+  const parsed = LoginSchema.safeParse(await readJson(req));
+  if (!parsed.success) return invalidInput();
   const { email, password } = parsed.data;
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const limit = await checkAuthRateLimit('login', { ip: clientIp(req), email });
+  if (!limit.allowed) {
+    await recordAuthEvent({ event: 'LOGIN_RATE_LIMITED', req, email, metadata: { scope: limit.scope ?? null } });
+    return rateLimitedResponse(limit.retryAfterSeconds);
+  }
+
+  const user = await findUserByEmail(email);
   if (!user || !user.password) {
-    return Response.json({ error: 'Incorrect email or password' }, { status: 401 });
+    await burnPasswordCheck(password);
+    await recordAuthEvent({ event: 'LOGIN_FAILURE', req, email, metadata: { reason: user ? 'no_password' : 'unknown_user' } });
+    return failure();
   }
 
-  if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
-    return Response.json({ error: 'Account temporarily locked due to failed login attempts' }, { status: 423 });
+  const reservation = await reservePasswordAttempt(user.id);
+  if (!reservation.reserved) {
+    await burnPasswordCheck(password);
+    await recordAuthEvent({ event: 'LOGIN_FAILURE', req, userId: user.id, email, metadata: { reason: 'locked' } });
+    return failure();
   }
-
-  // A lockout that has elapsed has been served -- the attempt budget resets,
-  // it doesn't keep accumulating from before the lock.
-  const priorAttempts = user.lockedUntil ? 0 : user.failedLoginAttempts;
 
   const correct = await verifyPassword(password, user.password);
   if (!correct) {
-    const failedLoginAttempts = priorAttempts + 1;
-    const data: { failedLoginAttempts: number; lockedUntil?: Date | null } = { failedLoginAttempts };
-    if (failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
-      data.lockedUntil = new Date(Date.now() + LOCKOUT_MS);
-    } else if (user.lockedUntil) {
-      // The account had a lockedUntil (necessarily expired, since an active
-      // lock already returned early above) and this failure doesn't re-lock
-      // it. That stale timestamp must be cleared here -- otherwise it stays
-      // truthy on the row, and the NEXT wrong password sees it and wrongly
-      // resets priorAttempts to 0 again, forever disabling lockout.
-      data.lockedUntil = null;
+    await recordAuthEvent({ event: 'LOGIN_FAILURE', req, userId: user.id, email, metadata: { reason: 'wrong_password', attempt: reservation.attempt } });
+    if (reservation.lockedNow) {
+      await recordAuthEvent({ event: 'ACCOUNT_LOCKED', req, userId: user.id, email });
     }
-    await prisma.user.update({ where: { id: user.id }, data });
-    return Response.json({ error: 'Incorrect email or password' }, { status: 401 });
+    return failure();
   }
 
+  await clearFailedAttempts(user.id);
+
+  // Only legacy rows can be unverified: sign-up now creates the user after
+  // the emailed code is confirmed (SEC-B-005).
   if (!user.emailVerified) {
-    return Response.json({ error: 'Please verify your email before signing in' }, { status: 403 });
+    await recordAuthEvent({ event: 'LOGIN_FAILURE', req, userId: user.id, email, metadata: { reason: 'email_not_verified' } });
+    return Response.json(
+      { error: 'Please verify your email before signing in', code: 'EMAIL_NOT_VERIFIED' },
+      { status: 403, headers: noStoreHeaders() },
+    );
   }
 
-  if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-    await prisma.user.update({ where: { id: user.id }, data: { failedLoginAttempts: 0, lockedUntil: null } });
-  }
-
-  const token = await signSessionToken({ userId: user.id, sessionVersion: user.sessionVersion });
-  const isProd = process.env.NODE_ENV === 'production';
-  const cookie = `session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}${isProd ? '; Secure' : ''}`;
-
-  return Response.json({ message: 'Signed in' }, { headers: { 'Set-Cookie': cookie } });
+  const cookie = await createSessionCookie(user);
+  await recordAuthEvent({ event: 'LOGIN_SUCCESS', req, userId: user.id, email, metadata: { method: 'password' } });
+  return Response.json({ message: 'Signed in' }, { headers: noStoreHeaders({ 'Set-Cookie': cookie }) });
 }

@@ -1,260 +1,186 @@
 // @vitest-environment node
-//
-// signSessionToken (via POST) uses jose, whose WebCrypto key-type checks do
-// `instanceof Uint8Array`. jsdom (this project's default vitest environment)
-// ships its own Uint8Array global that isn't reference-equal to Node's, so
-// under jsdom that check fails with "Received an instance of Uint8Array"
-// even though it is one. Same root cause documented in lib/auth/jwt.test.ts
-// and lib/prisma.test.ts — forcing the Node environment for this file avoids
-// it without touching the global jsdom config other tests rely on.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// POST /api/auth/login against the real test database.
+import { describe, it, expect } from 'vitest';
+import { prisma } from '@/lib/prisma';
 import { POST } from './route';
-import { hashPassword } from '@/lib/auth/password';
+import { verifySessionToken } from '@/lib/auth/jwt';
+import { apiRequest, authEventNames, createUser, setCookies, uniqueEmail, uniqueIp } from '@/lib/auth/test-helpers';
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: { user: { findUnique: vi.fn(), update: vi.fn() } },
-}));
+const PASSWORD = 'correct horse battery staple';
+
+function login(email: string, password: string, opts: Parameters<typeof apiRequest>[2] = {}) {
+  return POST(apiRequest('/api/auth/login', { email, password }, opts));
+}
 
 describe('POST /api/auth/login', () => {
-  // Each test below reads `mock.calls[0]` expecting it to be the *first
-  // call within that test*. Without clearing between tests, calls
-  // accumulate across the whole describe block and index 0 ends up
-  // pointing at a call made by an earlier test.
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('sets a session cookie on correct credentials', async () => {
-    const passwordHash = await hashPassword('correct horse battery staple');
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue({
-      id: 'user-1', email: 'a@b.com', password: passwordHash, emailVerified: true,
-      sessionVersion: 0, failedLoginAttempts: 0, lockedUntil: null,
-    });
-
-    const req = new Request('http://localhost/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', password: 'correct horse battery staple' }),
-    });
-    const res = await POST(req);
-
+  it('sets a hardened session cookie on correct credentials and records LOGIN_SUCCESS', async () => {
+    const user = await createUser();
+    const res = await login(user.email, PASSWORD);
     expect(res.status).toBe(200);
-    expect(res.headers.get('set-cookie')).toMatch(/^session=/);
-  });
-
-  it('sets a session cookie with HttpOnly, SameSite=Lax, and a 30-day Max-Age', async () => {
-    const passwordHash = await hashPassword('correct horse battery staple');
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue({
-      id: 'user-1', email: 'a@b.com', password: passwordHash, emailVerified: true,
-      sessionVersion: 0, failedLoginAttempts: 0, lockedUntil: null,
-    });
-
-    const req = new Request('http://localhost/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', password: 'correct horse battery staple' }),
-    });
-    const res = await POST(req);
-
-    const cookie = res.headers.get('set-cookie');
+    const [cookie] = setCookies(res);
+    expect(cookie).toMatch(/^session=/);
     expect(cookie).toMatch(/HttpOnly/);
     expect(cookie).toMatch(/SameSite=Lax/);
+    expect(cookie).toMatch(/Path=\//);
     expect(cookie).toMatch(/Max-Age=2592000/);
+    const token = cookie.split(';')[0].slice('session='.length);
+    expect(await verifySessionToken(token)).toEqual({ userId: user.id, sessionVersion: 0 });
+    expect(await authEventNames({ userId: user.id })).toEqual(['LOGIN_SUCCESS']);
+  });
+
+  it('normalises the email (case and whitespace)', async () => {
+    const user = await createUser();
+    const res = await login(`  ${user.email.toUpperCase()} `, PASSWORD);
+    expect(res.status).toBe(200);
+  });
+
+  it('issues a new token on every sign-in (rotation)', async () => {
+    const user = await createUser();
+    const a = setCookies(await login(user.email, PASSWORD))[0];
+    await new Promise((r) => setTimeout(r, 1100));
+    const b = setCookies(await login(user.email, PASSWORD))[0];
+    expect(a).not.toEqual(b);
   });
 
   it('resets failedLoginAttempts and lockedUntil on a successful login', async () => {
-    const passwordHash = await hashPassword('correct horse battery staple');
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue({
-      id: 'user-1', email: 'a@b.com', password: passwordHash, emailVerified: true,
-      sessionVersion: 0, failedLoginAttempts: 3, lockedUntil: null,
-    });
-
-    const req = new Request('http://localhost/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', password: 'correct horse battery staple' }),
-    });
-    const res = await POST(req);
-
-    expect(res.status).toBe(200);
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 'user-1' },
-      data: { failedLoginAttempts: 0, lockedUntil: null },
-    });
+    const user = await createUser();
+    await prisma.user.update({ where: { id: user.id }, data: { failedLoginAttempts: 3 } });
+    expect((await login(user.email, PASSWORD)).status).toBe(200);
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.failedLoginAttempts).toBe(0);
+    expect(after.lockedUntil).toBeNull();
   });
 
   it('rejects an incorrect password and increments failedLoginAttempts', async () => {
-    const passwordHash = await hashPassword('correct horse battery staple');
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue({
-      id: 'user-1', email: 'a@b.com', password: passwordHash, emailVerified: true,
-      sessionVersion: 0, failedLoginAttempts: 0, lockedUntil: null,
-    });
-
-    const req = new Request('http://localhost/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', password: 'wrong' }),
-    });
-    const res = await POST(req);
-
+    const user = await createUser();
+    const res = await login(user.email, 'wrong password');
     expect(res.status).toBe(401);
-    expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: 'user-1' }, data: { failedLoginAttempts: 1 } });
+    expect(await res.json()).toEqual({ error: 'Incorrect email or password' });
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.failedLoginAttempts).toBe(1);
+    expect(await authEventNames({ userId: user.id })).toEqual(['LOGIN_FAILURE']);
   });
 
   it('locks the account for 15 minutes after the 5th consecutive failure', async () => {
-    const passwordHash = await hashPassword('correct horse battery staple');
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue({
-      id: 'user-1', email: 'a@b.com', password: passwordHash, emailVerified: true,
-      sessionVersion: 0, failedLoginAttempts: 4, lockedUntil: null,
-    });
+    const user = await createUser();
+    for (let i = 0; i < 5; i++) await login(user.email, 'wrong password');
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.failedLoginAttempts).toBe(5);
+    const ms = after.lockedUntil!.getTime() - Date.now();
+    expect(ms).toBeGreaterThan(14 * 60_000);
+    expect(ms).toBeLessThanOrEqual(15 * 60_000 + 1000);
+    expect(await authEventNames({ userId: user.id })).toContain('ACCOUNT_LOCKED');
+  }, 15_000);
 
-    const req = new Request('http://localhost/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', password: 'wrong' }),
-    });
-    await POST(req);
-
-    const call = mockedPrisma.user.update.mock.calls[0][0];
-    expect(call.data.failedLoginAttempts).toBe(5);
-    expect(new Date(call.data.lockedUntil).getTime()).toBeGreaterThan(Date.now() + 14 * 60 * 1000);
-  });
-
-  it('rejects login while the account is locked, even with the correct password', async () => {
-    const passwordHash = await hashPassword('correct horse battery staple');
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue({
-      id: 'user-1', email: 'a@b.com', password: passwordHash, emailVerified: true,
-      sessionVersion: 0, failedLoginAttempts: 5, lockedUntil: new Date(Date.now() + 10 * 60 * 1000),
-    });
-
-    const req = new Request('http://localhost/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', password: 'correct horse battery staple' }),
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(423);
-  });
-
-  it('gives a fresh attempt budget after a lockout has expired, instead of continuing to accumulate', async () => {
-    const passwordHash = await hashPassword('correct horse battery staple');
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue({
-      id: 'user-1', email: 'a@b.com', password: passwordHash, emailVerified: true,
-      sessionVersion: 0, failedLoginAttempts: 5, lockedUntil: new Date(Date.now() - 60 * 1000),
-    });
-
-    const req = new Request('http://localhost/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', password: 'wrong' }),
-    });
-    const res = await POST(req);
-
+  it('rejects login while the account is locked, even with the correct password, with the generic 401', async () => {
+    const user = await createUser();
+    await prisma.user.update({ where: { id: user.id }, data: { failedLoginAttempts: 5, lockedUntil: new Date(Date.now() + 10 * 60_000) } });
+    const res = await login(user.email, PASSWORD);
     expect(res.status).toBe(401);
-    // The stale, already-expired lockedUntil must be explicitly cleared here.
-    // If it isn't, it stays truthy on the row and the NEXT wrong password
-    // would see it and wrongly reset the attempt budget to 0 again -- see
-    // the multi-attempt regression test below for the full failure mode.
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 'user-1' },
-      data: { failedLoginAttempts: 1, lockedUntil: null },
-    });
+    expect(await res.json()).toEqual({ error: 'Incorrect email or password' });
+    expect(setCookies(res)).toEqual([]);
   });
 
-  it('re-locks the account after accumulating a fresh MAX_FAILED_ATTEMPTS post-expiry, proving the reset budget is not infinite', async () => {
-    const passwordHash = await hashPassword('correct horse battery staple');
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
+  it('gives a fresh attempt budget after a lockout has expired, and re-locks after 5 more failures', async () => {
+    const user = await createUser();
+    await prisma.user.update({ where: { id: user.id }, data: { failedLoginAttempts: 5, lockedUntil: new Date(Date.now() - 1000) } });
+    await login(user.email, 'wrong password');
+    let row = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(row.failedLoginAttempts).toBe(1);
+    expect(row.lockedUntil).toBeNull();
+    for (let i = 0; i < 4; i++) await login(user.email, 'wrong password');
+    row = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(row.failedLoginAttempts).toBe(5);
+    expect(row.lockedUntil!.getTime()).toBeGreaterThan(Date.now());
+  }, 15_000);
 
-    // A persisted mock: `update` actually mutates the row that `findUnique`
-    // returns on the next call, so state carries across consecutive
-    // requests -- a stateless one-shot mock can't expose this bug, which
-    // only appears across a *sequence* of attempts.
-    type MockUserRow = {
-      id: string; email: string; password: string; emailVerified: boolean;
-      sessionVersion: number; failedLoginAttempts: number; lockedUntil: Date | null;
-    };
-    let userRow: MockUserRow = {
-      id: 'user-1', email: 'a@b.com', password: passwordHash, emailVerified: true,
-      sessionVersion: 0, failedLoginAttempts: 5, lockedUntil: new Date(Date.now() - 60 * 1000),
-    };
-    mockedPrisma.user.findUnique.mockImplementation(() => Promise.resolve(userRow));
-    mockedPrisma.user.update.mockImplementation(({ data }: { data: Partial<MockUserRow> }) => {
-      userRow = { ...userRow, ...data };
-      return Promise.resolve(userRow);
-    });
-
-    const attempt = () => {
-      const req = new Request('http://localhost/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email: 'a@b.com', password: 'wrong' }),
-      });
-      return POST(req);
-    };
-
-    // Attempts 1-4 post-expiry: budget resets once (to 0) and then climbs
-    // normally. If the stale lockedUntil were never cleared, every one of
-    // these would wrongly see a truthy lockedUntil and reset back to 0/1
-    // forever, and the account would never re-lock.
-    for (let i = 1; i <= 4; i++) {
-      const res = await attempt();
-      expect(res.status).toBe(401);
-      expect(userRow.failedLoginAttempts).toBe(i);
-      expect(userRow.lockedUntil).toBeNull();
-    }
-
-    // 5th fresh post-expiry failure must re-lock the account.
-    const fifth = await attempt();
-    expect(fifth.status).toBe(401);
-    expect(userRow.failedLoginAttempts).toBe(5);
-    expect(userRow.lockedUntil).not.toBeNull();
-    expect((userRow.lockedUntil as Date).getTime()).toBeGreaterThan(Date.now() + 14 * 60 * 1000);
-
-    // And a 6th attempt while newly locked must be rejected as locked (423),
-    // not treated as just another wrong password.
-    const sixth = await attempt();
-    expect(sixth.status).toBe(423);
+  it('allows the correct password after an expired lock', async () => {
+    const user = await createUser();
+    await prisma.user.update({ where: { id: user.id }, data: { failedLoginAttempts: 5, lockedUntil: new Date(Date.now() - 1000) } });
+    expect((await login(user.email, PASSWORD)).status).toBe(200);
   });
 
-  it('rejects login for an unverified email', async () => {
-    const passwordHash = await hashPassword('correct horse battery staple');
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue({
-      id: 'user-1', email: 'a@b.com', password: passwordHash, emailVerified: false,
-      sessionVersion: 0, failedLoginAttempts: 0, lockedUntil: null,
-    });
-
-    const req = new Request('http://localhost/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', password: 'correct horse battery staple' }),
-    });
-    const res = await POST(req);
+  it('rejects login for an unverified (legacy) account after the password check', async () => {
+    const user = await createUser({ emailVerified: false });
+    const res = await login(user.email, PASSWORD);
     expect(res.status).toBe(403);
+    expect(setCookies(res)).toEqual([]);
+  });
+
+  it('returns 400 for a malformed JSON body', async () => {
+    const res = await POST(apiRequest('/api/auth/login', '{not json'));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('SEC-B-006 enumeration resistance', () => {
+  it('answers unknown email, OAuth-only account, wrong password and locked account identically', async () => {
+    const pw = await createUser();
+    const oauthOnly = await createUser({ password: null });
+    const locked = await createUser();
+    await prisma.user.update({ where: { id: locked.id }, data: { failedLoginAttempts: 5, lockedUntil: new Date(Date.now() + 60_000) } });
+
+    const responses = await Promise.all([
+      login(uniqueEmail('nobody'), PASSWORD),
+      login(oauthOnly.email, PASSWORD),
+      login(pw.email, 'wrong password'),
+      login(locked.email, PASSWORD),
+    ]);
+    const shapes = await Promise.all(responses.map(async (r) => ({ status: r.status, body: await r.json() })));
+    for (const s of shapes) expect(s).toEqual({ status: 401, body: { error: 'Incorrect email or password' } });
+  });
+
+  it('does bcrypt work for an unknown email (no fast path)', async () => {
+    const known = await createUser();
+    const time = async (email: string) => {
+      const t = performance.now();
+      await login(email, 'wrong password');
+      return performance.now() - t;
+    };
+    await time(uniqueEmail()); // warm the dummy hash
+    const unknown = await time(uniqueEmail());
+    const wrong = await time(known.email);
+    // bcrypt cost 12 takes well over 50 ms; an early return would take ~1-5 ms.
+    expect(unknown).toBeGreaterThan(50);
+    expect(unknown).toBeGreaterThan(wrong * 0.4);
+  });
+});
+
+describe('ADR-012 rate limiting on login (SEC-B-001)', () => {
+  it('returns 429 with Retry-After once one IP exceeds 20 attempts in 15 minutes', async () => {
+    const ip = uniqueIp();
+    const statuses: number[] = [];
+    for (let i = 0; i < 21; i++) {
+      statuses.push((await POST(apiRequest('/api/auth/login', { email: uniqueEmail(), password: 'x' }, { ip }))).status);
+    }
+    expect(statuses.slice(0, 20).every((s) => s === 401)).toBe(true);
+    expect(statuses[20]).toBe(429);
+    const res = await POST(apiRequest('/api/auth/login', { email: uniqueEmail(), password: 'x' }, { ip }));
+    expect(Number(res.headers.get('retry-after'))).toBeGreaterThan(0);
+  }, 30_000);
+
+  it('returns 429 once one email exceeds 10 attempts in 15 minutes, across IPs, and records LOGIN_RATE_LIMITED', async () => {
+    const email = uniqueEmail('target');
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) statuses.push((await login(email, 'x')).status);
+    expect(statuses[10]).toBe(429);
+    expect(await authEventNames({ email })).toContain('LOGIN_RATE_LIMITED');
+  }, 30_000);
+});
+
+describe('SEC-B-010 login CSRF', () => {
+  it('rejects a cross-site form post (text/plain body)', async () => {
+    const user = await createUser();
+    const res = await POST(
+      apiRequest('/api/auth/login', JSON.stringify({ email: user.email, password: PASSWORD }), { origin: 'https://evil.example', contentType: 'text/plain' }),
+    );
+    expect(res.status).toBe(403);
+    expect(setCookies(res)).toEqual([]);
+  });
+
+  it('rejects a same-origin text/plain body with 415', async () => {
+    const user = await createUser();
+    const res = await POST(apiRequest('/api/auth/login', JSON.stringify({ email: user.email, password: PASSWORD }), { contentType: 'text/plain' }));
+    expect(res.status).toBe(415);
   });
 });
