@@ -1,20 +1,16 @@
 // app/api/auth/github/route.ts
+// Starts GitHub sign-in with `state` + PKCE S256 (see lib/auth/oauth-flow.ts).
 import { buildGithubAuthUrl } from '@/lib/auth/github-oauth';
-import { randomBytes } from 'node:crypto';
+import { startOAuthFlow } from '@/lib/auth/oauth-flow';
+import { checkAuthRateLimit, rateLimitedResponse } from '@/lib/security/auth-rate-limit';
+import { clientIp } from '@/lib/security/request-meta';
 
-export async function GET() {
-  const state = randomBytes(16).toString('hex');
-  const url = buildGithubAuthUrl(state);
-  // The state cookie is compared against the callback's ?state= param (see
-  // app/api/auth/github/callback/route.ts) to prevent CSRF — an attacker
-  // tricking a victim into completing OAuth with the attacker's own
-  // authorization code. 5-minute expiry is enough for a normal consent
-  // flow; httpOnly since JS never needs to read it. Secure in production,
-  // matching the session cookie (app/api/auth/login/route.ts) and the
-  // Google OAuth state cookie (app/api/auth/google/route.ts) — without it
-  // this cookie could travel over plaintext HTTP and be captured by a
-  // network attacker to pull off that same CSRF.
-  const isProd = process.env.NODE_ENV === 'production';
-  const stateCookie = `github_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=300${isProd ? '; Secure' : ''}`;
-  return new Response(null, { status: 307, headers: { Location: url, 'Set-Cookie': stateCookie } });
+export async function GET(req: Request) {
+  const limit = await checkAuthRateLimit('oauth', { ip: clientIp(req) });
+  if (!limit.allowed) return rateLimitedResponse(limit.retryAfterSeconds);
+
+  const flow = startOAuthFlow('github');
+  const headers = new Headers({ Location: buildGithubAuthUrl(flow.state, flow.codeChallenge), 'Cache-Control': 'no-store' });
+  for (const cookie of flow.cookies) headers.append('Set-Cookie', cookie);
+  return new Response(null, { status: 307, headers });
 }

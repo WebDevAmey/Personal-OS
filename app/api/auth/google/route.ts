@@ -1,19 +1,18 @@
 // app/api/auth/google/route.ts
+// Starts Google sign-in: `state` and a PKCE verifier go into 5-minute
+// HttpOnly cookies (see lib/auth/oauth-flow.ts) and the browser is sent to
+// Google with the matching state and S256 code challenge.
 import { buildGoogleAuthUrl } from '@/lib/auth/google-oauth';
-import { randomBytes } from 'node:crypto';
+import { startOAuthFlow } from '@/lib/auth/oauth-flow';
+import { checkAuthRateLimit, rateLimitedResponse } from '@/lib/security/auth-rate-limit';
+import { clientIp } from '@/lib/security/request-meta';
 
-export async function GET() {
-  const state = randomBytes(16).toString('hex');
-  const url = buildGoogleAuthUrl(state);
-  // The state cookie is compared against the callback's ?state= param
-  // (see app/api/auth/google/callback/route.ts) to prevent CSRF — an
-  // attacker tricking a victim into completing OAuth with the attacker's
-  // own authorization code. 5-minute expiry is enough for a normal consent
-  // flow; httpOnly since JS never needs to read it. Secure in production,
-  // matching the session cookie (app/api/auth/login/route.ts) — without it
-  // this cookie could travel over plaintext HTTP and be captured by a
-  // network attacker to pull off that same CSRF.
-  const isProd = process.env.NODE_ENV === 'production';
-  const stateCookie = `google_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=300${isProd ? '; Secure' : ''}`;
-  return new Response(null, { status: 307, headers: { Location: url, 'Set-Cookie': stateCookie } });
+export async function GET(req: Request) {
+  const limit = await checkAuthRateLimit('oauth', { ip: clientIp(req) });
+  if (!limit.allowed) return rateLimitedResponse(limit.retryAfterSeconds);
+
+  const flow = startOAuthFlow('google');
+  const headers = new Headers({ Location: buildGoogleAuthUrl(flow.state, flow.codeChallenge), 'Cache-Control': 'no-store' });
+  for (const cookie of flow.cookies) headers.append('Set-Cookie', cookie);
+  return new Response(null, { status: 307, headers });
 }
