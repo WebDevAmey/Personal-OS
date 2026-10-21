@@ -1,162 +1,72 @@
+// @vitest-environment node
+// POST /api/auth/forgot-password against the real test database.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { POST } from './route';
+import { prisma } from '@/lib/prisma';
+import { outbox } from '@/lib/email/transport';
+import { apiRequest, authEventNames, createUser, uniqueEmail, uniqueIp } from '@/lib/auth/test-helpers';
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
-    user: { findUnique: vi.fn() },
-    verificationToken: { findFirst: vi.fn() },
+// The real after() needs Next's request scope; capture the task so a test can
+// run it explicitly, as Next would after sending the response.
+const deferred = vi.hoisted(() => [] as (() => Promise<void>)[]);
+vi.mock('next/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/server')>()),
+  after: (task: () => Promise<void>) => {
+    deferred.push(task);
   },
 }));
-vi.mock('@/lib/auth/otp', () => ({ sendPasswordResetOtp: vi.fn().mockResolvedValue(undefined) }));
-// The real `after()` (from next/server) requires the AsyncLocalStorage request
-// scope that Next.js's own routing sets up before invoking a route handler.
-// These tests call POST() directly, without that wrapper, so the real
-// `after()` throws "called outside a request scope". We mock it the same way
-// `@/lib/prisma` is mocked: capture the scheduled task so a test can invoke
-// (and await) it explicitly, simulating Next running it after the response.
-vi.mock('next/server', () => ({ after: vi.fn() }));
 
-type AfterTask = () => Promise<void>;
+const { POST } = await import('./route');
 
-async function runScheduledAfterTask(): Promise<void> {
-  const { after } = await import('next/server');
-  const mockedAfter = after as unknown as ReturnType<typeof vi.fn>;
-  const task = mockedAfter.mock.calls[mockedAfter.mock.calls.length - 1][0] as AfterTask;
-  await task();
+async function runDeferred() {
+  while (deferred.length) await deferred.shift()!();
 }
 
+beforeEach(() => {
+  deferred.length = 0;
+});
+
 describe('POST /api/auth/forgot-password', () => {
-  // All mocks are shared across every test in this file via the vi.mock
-  // calls above. Without clearing between tests, calls accumulate and the
-  // "not.toHaveBeenCalled()" assertion below would see calls made by an
-  // earlier test (see login/route.test.ts for the same fix).
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('sends a reset OTP when the email exists and no recent token was issued', async () => {
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn> };
-      verificationToken: { findFirst: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@b.com' });
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue(null);
-
-    const req = new Request('http://localhost/api/auth/forgot-password', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com' }),
-    });
-    const res = await POST(req);
-
+  it('sends a reset code when the email exists', async () => {
+    const user = await createUser();
+    const res = await POST(apiRequest('/api/auth/forgot-password', { email: user.email }));
     expect(res.status).toBe(200);
-    // The response resolves without waiting on the OTP send — that's the
-    // whole point of scheduling it via after() rather than awaiting inline
-    // (Finding 2: awaiting it inline makes response timing an enumeration
-    // oracle). Nothing has been sent yet at this point.
-    const { sendPasswordResetOtp } = await import('@/lib/auth/otp');
-    expect(sendPasswordResetOtp).not.toHaveBeenCalled();
-
-    await runScheduledAfterTask();
-    expect(sendPasswordResetOtp).toHaveBeenCalledWith('a@b.com');
+    await runDeferred();
+    expect(await prisma.verificationToken.count({ where: { email: user.email, type: 'PASSWORD_RESET' } })).toBe(1);
+    expect(outbox.filter((m) => m.to === user.email)).toHaveLength(1);
+    expect(await authEventNames({ userId: user.id })).toEqual(['PASSWORD_RESET_REQUESTED']);
   });
 
-  it('returns 200 even when the email does not exist (no user enumeration)', async () => {
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn> };
-      verificationToken: { findFirst: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue(null);
-
-    const req = new Request('http://localhost/api/auth/forgot-password', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'nobody@b.com' }),
-    });
-    const res = await POST(req);
-
-    expect(res.status).toBe(200);
-
-    await runScheduledAfterTask();
-    const { sendPasswordResetOtp } = await import('@/lib/auth/otp');
-    expect(sendPasswordResetOtp).not.toHaveBeenCalled();
-    expect(mockedPrisma.verificationToken.findFirst).not.toHaveBeenCalled();
+  it('returns the identical response whether or not the email is registered, and sends nothing for unknown emails', async () => {
+    const user = await createUser();
+    const unknown = uniqueEmail();
+    const a = await POST(apiRequest('/api/auth/forgot-password', { email: user.email }));
+    const b = await POST(apiRequest('/api/auth/forgot-password', { email: unknown }));
+    expect(a.status).toBe(b.status);
+    expect(await a.json()).toEqual(await b.json());
+    await runDeferred();
+    expect(outbox.filter((m) => m.to === unknown)).toHaveLength(0);
+    expect(await prisma.verificationToken.count({ where: { email: unknown } })).toBe(0);
   });
 
-  it('returns the identical response body regardless of whether the email is registered', async () => {
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn> };
-      verificationToken: { findFirst: ReturnType<typeof vi.fn> };
-    };
-
-    mockedPrisma.user.findUnique.mockResolvedValueOnce({ id: 'user-1', email: 'a@b.com' });
-    mockedPrisma.verificationToken.findFirst.mockResolvedValueOnce(null);
-    const existsRes = await POST(
-      new Request('http://localhost/api/auth/forgot-password', {
-        method: 'POST',
-        body: JSON.stringify({ email: 'a@b.com' }),
-      }),
-    );
-    const existsBody: unknown = await existsRes.json();
-    // Drain the scheduled after() task so its queued mockResolvedValueOnce
-    // values don't leak into a later test (vi.clearAllMocks() clears call
-    // counts but not queued "Once" implementations).
-    await runScheduledAfterTask();
-
-    mockedPrisma.user.findUnique.mockResolvedValueOnce(null);
-    const notExistsRes = await POST(
-      new Request('http://localhost/api/auth/forgot-password', {
-        method: 'POST',
-        body: JSON.stringify({ email: 'nobody@b.com' }),
-      }),
-    );
-    const notExistsBody: unknown = await notExistsRes.json();
-    await runScheduledAfterTask();
-
-    expect(existsRes.status).toBe(notExistsRes.status);
-    expect(existsBody).toEqual(notExistsBody);
+  it('does not issue a second code within 60 seconds for the same email', async () => {
+    const user = await createUser();
+    await POST(apiRequest('/api/auth/forgot-password', { email: user.email }));
+    await POST(apiRequest('/api/auth/forgot-password', { email: user.email }));
+    await runDeferred();
+    expect(outbox.filter((m) => m.to === user.email)).toHaveLength(1);
   });
 
-  it('does not issue a second reset OTP within 60 seconds for the same email (throttled)', async () => {
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      user: { findUnique: ReturnType<typeof vi.fn> };
-      verificationToken: { findFirst: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@b.com' });
-    // First call: no recent token yet, so an OTP is issued.
-    mockedPrisma.verificationToken.findFirst.mockResolvedValueOnce(null);
-    // Second call: a token created moments ago is found, so issuance is skipped.
-    mockedPrisma.verificationToken.findFirst.mockResolvedValueOnce({
-      id: 'vt-1', email: 'a@b.com', type: 'PASSWORD_RESET', createdAt: new Date(),
-    });
-
-    const makeReq = () =>
-      new Request('http://localhost/api/auth/forgot-password', {
-        method: 'POST',
-        body: JSON.stringify({ email: 'a@b.com' }),
-      });
-
-    const res1 = await POST(makeReq());
-    expect(res1.status).toBe(200);
-    await runScheduledAfterTask();
-
-    const res2 = await POST(makeReq());
-    expect(res2.status).toBe(200);
-    await runScheduledAfterTask();
-
-    const { sendPasswordResetOtp } = await import('@/lib/auth/otp');
-    expect(sendPasswordResetOtp).toHaveBeenCalledTimes(1);
-    expect(mockedPrisma.verificationToken.findFirst).toHaveBeenCalledTimes(2);
+  it('returns 400 for a malformed JSON body', async () => {
+    expect((await POST(apiRequest('/api/auth/forgot-password', '{x'))).status).toBe(400);
   });
 
-  it('returns 400 for a malformed JSON body instead of throwing', async () => {
-    const req = new Request('http://localhost/api/auth/forgot-password', {
-      method: 'POST',
-      body: 'not-json',
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(400);
+  it('limits requests per IP with 429 (10/hour)', async () => {
+    const ip = uniqueIp();
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) {
+      statuses.push((await POST(apiRequest('/api/auth/forgot-password', { email: uniqueEmail() }, { ip }))).status);
+    }
+    expect(statuses[9]).toBe(200);
+    expect(statuses[10]).toBe(429);
   });
 });

@@ -1,164 +1,118 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// @vitest-environment node
+// POST /api/auth/reset-password against the real test database.
+import { describe, it, expect } from 'vitest';
+import { prisma } from '@/lib/prisma';
+import { outbox } from '@/lib/email/transport';
+import { sendPasswordResetOtp } from '@/lib/auth/otp';
+import { verifyPassword } from '@/lib/auth/password';
+import { signSessionToken } from '@/lib/auth/jwt';
+import { getSession } from '@/lib/auth/session';
+import { apiRequest, authEventNames, createUser, uniqueEmail } from '@/lib/auth/test-helpers';
 import { POST } from './route';
-import bcrypt from 'bcrypt';
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
-    verificationToken: { findFirst: vi.fn(), updateMany: vi.fn(), delete: vi.fn() },
-    user: { update: vi.fn() },
-  },
-}));
+const NEW_PASSWORD = 'a brand new long password';
+
+async function issue(email: string): Promise<string> {
+  await sendPasswordResetOtp(email);
+  return outbox.filter((m) => m.to === email).at(-1)!.text.match(/\b(\d{6})\b/)![1];
+}
+
+const wrong = (code: string) => (code === '000000' ? '111111' : '000000');
+
+function reset(email: string, code: string, newPassword = NEW_PASSWORD) {
+  return POST(apiRequest('/api/auth/reset-password', { email, code, newPassword }));
+}
 
 describe('POST /api/auth/reset-password', () => {
-  // Shared mocks across tests in this file — clear between tests so a call
-  // recorded by one test doesn't leak into the next (see login/route.test.ts).
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  it('resets the password, revokes every session and clears the cookie on a correct code', async () => {
+    const user = await createUser();
+    const oldToken = await signSessionToken({ userId: user.id, sessionVersion: 0 });
+    const code = await issue(user.email);
 
-  it('resets the password and bumps sessionVersion (signs out everywhere) on a correct code', async () => {
-    const otpHash = await bcrypt.hash('123456', 10);
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      verificationToken: { findFirst: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> };
-      user: { update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
-      id: 'vt-1', email: 'a@b.com', type: 'PASSWORD_RESET', otpHash, attempts: 0, expiresAt: new Date(Date.now() + 60000),
-    });
-    mockedPrisma.verificationToken.updateMany.mockResolvedValue({ count: 1 });
-
-    const req = new Request('http://localhost/api/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', code: '123456', newPassword: 'a brand new passphrase' }),
-    });
-    const res = await POST(req);
-
+    const res = await reset(user.email, code);
     expect(res.status).toBe(200);
-    expect(mockedPrisma.verificationToken.updateMany).toHaveBeenCalledWith({
-      where: { id: 'vt-1', attempts: { lt: 5 } },
-      data: { attempts: { increment: 1 } },
-    });
-    const call = mockedPrisma.user.update.mock.calls[0][0];
-    expect(call.where).toEqual({ email: 'a@b.com' });
-    expect(call.data.password).not.toBe('a brand new passphrase');
-    expect(call.data.sessionVersion.increment).toBe(1);
-    expect(mockedPrisma.verificationToken.delete).toHaveBeenCalledWith({ where: { id: 'vt-1' } });
+    expect(res.headers.getSetCookie()[0]).toMatch(/^session=; .*Max-Age=0/);
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(await verifyPassword(NEW_PASSWORD, row.password!)).toBe(true);
+    expect(row.sessionVersion).toBe(1);
+    const req = new Request('http://localhost:3000/', { headers: { cookie: `session=${oldToken}` } });
+    expect(await getSession(req)).toBeNull();
+    expect(await authEventNames({ userId: user.id })).toContain('PASSWORD_RESET_COMPLETED');
   });
 
-  it('rejects an incorrect or expired code', async () => {
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      verificationToken: { findFirst: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue(null);
-
-    const req = new Request('http://localhost/api/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', code: '000000', newPassword: 'a brand new passphrase' }),
+  it('SEC-B-023: clears the lockout and deletes every reset code for the email', async () => {
+    const user = await createUser();
+    await prisma.user.update({ where: { id: user.id }, data: { failedLoginAttempts: 5, lockedUntil: new Date(Date.now() + 600_000) } });
+    const code = await issue(user.email);
+    // A stray second token (e.g. issued by an older deployment) must not survive.
+    await prisma.verificationToken.create({
+      data: { email: user.email, type: 'PASSWORD_RESET', otpHash: 'x', expiresAt: new Date(Date.now() - 1000) },
     });
-    const res = await POST(req);
+    expect((await reset(user.email, code)).status).toBe(200);
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(row.failedLoginAttempts).toBe(0);
+    expect(row.lockedUntil).toBeNull();
+    expect(await prisma.verificationToken.count({ where: { email: user.email, type: 'PASSWORD_RESET' } })).toBe(0);
+  });
+
+  it('rejects an incorrect code and reserves the attempt', async () => {
+    const user = await createUser();
+    const code = await issue(user.email);
+    const res = await reset(user.email, wrong(code));
     expect(res.status).toBe(400);
+    const token = await prisma.verificationToken.findFirstOrThrow({ where: { email: user.email } });
+    expect(token.attempts).toBe(1);
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(await verifyPassword('correct horse battery staple', row.password!)).toBe(true);
   });
 
-  it('rejects an incorrect code against a real unexpired token and atomically reserves the attempt', async () => {
-    const otpHash = await bcrypt.hash('123456', 10);
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      verificationToken: { findFirst: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
-      user: { update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
-      id: 'vt-1', email: 'a@b.com', type: 'PASSWORD_RESET', otpHash, attempts: 0, expiresAt: new Date(Date.now() + 60000),
-    });
-    mockedPrisma.verificationToken.updateMany.mockResolvedValue({ count: 1 });
+  it('rejects when no code exists', async () => {
+    expect((await reset(uniqueEmail(), '123456')).status).toBe(400);
+  });
 
-    const req = new Request('http://localhost/api/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', code: '000000', newPassword: 'a brand new passphrase' }),
-    });
-    const res = await POST(req);
+  it('caps guesses at 5 per token even under concurrent requests', async () => {
+    const user = await createUser();
+    const code = await issue(user.email);
+    const results = await Promise.all(Array.from({ length: 8 }, () => reset(user.email, wrong(code))));
+    const bodies = await Promise.all(results.map((r) => r.json()));
+    expect(bodies.filter((b) => b.error === 'Incorrect code')).toHaveLength(5);
+    expect((await reset(user.email, code)).status).toBe(400);
+  }, 20_000);
 
+  it('is single use under a race', async () => {
+    const user = await createUser();
+    const code = await issue(user.email);
+    const [a, b] = await Promise.all([reset(user.email, code), reset(user.email, code, 'another long new password')]);
+    expect([a.status, b.status].sort()).toEqual([200, 400]);
+  });
+
+  it('enforces the new-password policy (SEC-B-022)', async () => {
+    const user = await createUser();
+    const code = await issue(user.email);
+    const res = await reset(user.email, code, 'short');
     expect(res.status).toBe(400);
-    expect(mockedPrisma.verificationToken.updateMany).toHaveBeenCalledWith({
-      where: { id: 'vt-1', attempts: { lt: 5 } },
-      data: { attempts: { increment: 1 } },
-    });
-    // A wrong code must never reset the password or bump sessionVersion.
-    expect(mockedPrisma.user.update).not.toHaveBeenCalled();
+    expect(await res.json()).toEqual({ error: 'Invalid input', fields: ['newPassword'] });
   });
 
-  it('rejects when the atomic reservation fails (max attempts already reserved)', async () => {
-    const otpHash = await bcrypt.hash('123456', 10);
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      verificationToken: { findFirst: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
-      user: { update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
-      id: 'vt-1', email: 'a@b.com', type: 'PASSWORD_RESET', otpHash, attempts: 5, expiresAt: new Date(Date.now() + 60000),
-    });
-    // Simulates the DB's WHERE attempts < 5 matching zero rows.
-    mockedPrisma.verificationToken.updateMany.mockResolvedValue({ count: 0 });
-
-    const req = new Request('http://localhost/api/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', code: '123456', newPassword: 'a brand new passphrase' }),
-    });
-    const res = await POST(req);
-
-    expect(res.status).toBe(400);
-    // Rejected before ever reaching the success path.
-    expect(mockedPrisma.user.update).not.toHaveBeenCalled();
+  it('returns 400 for a malformed JSON body', async () => {
+    expect((await POST(apiRequest('/api/auth/reset-password', '{x'))).status).toBe(400);
   });
+});
 
-  it('caps total guesses at MAX_ATTEMPTS even under concurrent requests (atomic reservation closes the check-then-act race)', async () => {
-    const otpHash = await bcrypt.hash('123456', 10);
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      verificationToken: { findFirst: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
-    };
-
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
-      id: 'vt-1', email: 'a@b.com', type: 'PASSWORD_RESET', otpHash, attempts: 0, expiresAt: new Date(Date.now() + 60000),
-    });
-
-    // Simulates a real atomic `UPDATE ... WHERE attempts < 5` against one shared
-    // row: only succeeds while the in-memory counter is still under the cap, and
-    // the increment happens synchronously within the call (no internal await),
-    // matching how a single DB row-level update can't be interleaved.
-    let attempts = 0;
-    mockedPrisma.verificationToken.updateMany.mockImplementation(async () => {
-      if (attempts >= 5) return { count: 0 };
-      attempts += 1;
-      return { count: 1 };
-    });
-
-    const bcryptCompareSpy = vi.spyOn(bcrypt, 'compare');
-
-    const requests = Array.from({ length: 50 }, () =>
-      new Request('http://localhost/api/auth/reset-password', {
-        method: 'POST',
-        body: JSON.stringify({ email: 'a@b.com', code: '000000', newPassword: 'a brand new passphrase' }),
-      }),
-    );
-
-    await Promise.all(requests.map((req) => POST(req)));
-
-    // Pre-fix behavior (check-then-act on a snapshot read) would let all 50
-    // concurrent requests reach bcrypt.compare. The atomic reservation caps it.
-    expect(bcryptCompareSpy.mock.calls.length).toBeLessThanOrEqual(5);
-    expect(attempts).toBe(5);
-
-    bcryptCompareSpy.mockRestore();
-  });
-
-  it('returns 400 for a malformed JSON body instead of throwing', async () => {
-    const req = new Request('http://localhost/api/auth/reset-password', {
-      method: 'POST',
-      body: 'not-json',
-    });
-    const res = await POST(req);
-    expect(res.status).toBe(400);
-  });
+describe('SEC-B-002 total reset guesses per email', () => {
+  it('rejects attempt 11 within 24 h even with a fresh, correct code', async () => {
+    const user = await createUser();
+    // Two codes x 5 wrong guesses = 10 guesses, spread across tokens.
+    for (let t = 0; t < 2; t++) {
+      const code = await issue(user.email);
+      for (let i = 0; i < 5; i++) expect((await reset(user.email, wrong(code))).status).toBe(400);
+    }
+    const fresh = await issue(user.email);
+    const res = await reset(user.email, fresh);
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get('retry-after'))).toBeGreaterThan(0);
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(await verifyPassword(NEW_PASSWORD, row.password!)).toBe(false);
+  }, 30_000);
 });
