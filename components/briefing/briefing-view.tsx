@@ -2,7 +2,7 @@ import type { DailyBriefing } from '@/db/schema';
 
 export function BriefingView({ briefing }: { briefing: DailyBriefing | null }) {
   if (!briefing) {
-    return <p>Your briefing is being prepared — check back shortly.</p>;
+    return <p>Your briefing is being prepared, check back shortly.</p>;
   }
   const attentionItems = briefing.attentionItems as string[];
   const digestItems = briefing.digestItems as string[];
