@@ -1,20 +1,19 @@
 // lib/auth/otp.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { sendSignUpOtp } from './otp';
+import { outbox } from '@/lib/email/transport';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: { verificationToken: { create: vi.fn() } },
 }));
-vi.mock('resend', () => ({
-  Resend: class {
-    emails = { send: vi.fn().mockResolvedValue({ data: { id: 'email-1' } }) };
-  },
-}));
 
 describe('sendSignUpOtp', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    outbox.length = 0;
+  });
 
-  it('stores a hashed 6-digit OTP with a 10-minute expiry and sends it via Resend', async () => {
+  it('stores a hashed 6-digit OTP with a 10-minute expiry and emails the plaintext code', async () => {
     const { prisma } = await import('@/lib/prisma');
     const mockedPrisma = prisma as unknown as {
       verificationToken: { create: ReturnType<typeof vi.fn> };
@@ -31,5 +30,8 @@ describe('sendSignUpOtp', () => {
     const expiresAt = new Date(call.data.expiresAt).getTime();
     expect(expiresAt).toBeGreaterThan(before + 9 * 60 * 1000);
     expect(expiresAt).toBeLessThan(before + 11 * 60 * 1000);
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0].to).toBe('a@b.com');
+    expect(outbox[0].text).toMatch(/\b\d{6}\b/);
   });
 });

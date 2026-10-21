@@ -1,11 +1,10 @@
 // lib/auth/otp.ts
 import bcrypt from 'bcrypt';
 import { randomInt } from 'node:crypto';
-import { Resend } from 'resend';
+import { sendEmail } from '@/lib/email/transport';
 import { prisma } from '@/lib/prisma';
 import type { VerificationType } from '@/lib/generated/prisma/client';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const OTP_TTL_MS = 10 * 60 * 1000;
 
 function generateOtp(): string {
@@ -23,8 +22,7 @@ async function issueOtp(email: string, type: VerificationType, subject: string):
     data: { email, type, otpHash, expiresAt: new Date(Date.now() + OTP_TTL_MS) },
   });
 
-  await resend.emails.send({
-    from: 'Personal OS <noreply@personal-os.app>',
+  await sendEmail({
     to: email,
     subject,
     text: `Your verification code is ${code}. It expires in 10 minutes.`,
