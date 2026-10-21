@@ -20,8 +20,12 @@ function VerifyOtpForm() {
   useEffect(() => {
     if (!email) {
       router.replace('/sign-up');
+    } else if (type === 'PASSWORD_RESET') {
+      // Reset codes are entered on the reset page together with the new
+      // password (the API verifies and consumes them in one step).
+      router.replace(`/reset-password?email=${encodeURIComponent(email)}`);
     }
-  }, [email, router]);
+  }, [email, type, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +36,7 @@ function VerifyOtpForm() {
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp, type }),
+        body: JSON.stringify({ email, code: otp, type: 'SIGN_UP' }),
       });
 
       const data = await res.json();
@@ -42,11 +46,7 @@ function VerifyOtpForm() {
         return;
       }
 
-      if (type === 'SIGN_UP') {
-        router.push('/sign-in?verified=true');
-      } else {
-        router.push(`/reset-password?token=${data.token}`);
-      }
+      router.push('/sign-in?verified=true');
     } catch {
       setError('Something went wrong');
     } finally {
