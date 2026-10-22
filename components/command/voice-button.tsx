@@ -3,7 +3,7 @@
 // Not rendered at all when the browser has no SpeechRecognition (AC-501);
 // the palette shows a "type instead" hint in that case.
 import { Mic, MicOff } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/components/app/cn';
 import type { SpeechRecognitionState } from '@/lib/voice/use-speech-recognition';
 
 export function VoiceButton({ voice, shortcut }: { voice: SpeechRecognitionState; shortcut: string }) {

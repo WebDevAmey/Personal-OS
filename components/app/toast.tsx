@@ -5,7 +5,7 @@
 // (the command runner) raise toasts too.
 import { Toast } from '@base-ui/react/toast';
 import { CircleAlert, CircleCheck, Info, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/components/app/cn';
 
 export const toastManager = Toast.createToastManager();
 

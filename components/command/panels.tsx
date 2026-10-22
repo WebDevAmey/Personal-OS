@@ -16,7 +16,7 @@ import {
   RefreshCw,
   PencilLine,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/components/app/cn';
 import { Kbd } from '@/components/app/kbd';
 import type { CommandResponse, ExecutedAction, Proposal } from './api';
 

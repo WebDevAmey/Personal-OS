@@ -26,7 +26,7 @@ import {
   Volume2,
   WifiOff,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/components/app/cn';
 import { Kbd } from '@/components/app/kbd';
 import { useIsMac, useOnline } from '@/lib/hooks/use-keyboard';
 import { useSpeechRecognition, VOICE_ERROR_COPY } from '@/lib/voice/use-speech-recognition';

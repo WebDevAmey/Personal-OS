@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@/components/app/cn';
 
 /** Keyboard hint (docs/07 §9): Geist Mono, 4px radius, surface-2, 1px border. */
 export function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
