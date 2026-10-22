@@ -729,7 +729,7 @@ function DueField({ dateId, timeId, value, disabled, onSave }: { dateId: string;
       <input
         id={dateId}
         type="date"
-        className={cn(inputCls, 'w-auto flex-1')}
+        className={cn(inputCls, 'min-w-[9.5rem] flex-1')}
         value={date}
         disabled={disabled}
         onChange={(e) => setDate(e.target.value)}
@@ -741,7 +741,7 @@ function DueField({ dateId, timeId, value, disabled, onSave }: { dateId: string;
       <input
         id={timeId}
         type="time"
-        className={cn(inputCls, 'w-28 shrink-0')}
+        className={cn(inputCls, 'w-[7.5rem] shrink-0')}
         value={time}
         disabled={disabled || !date}
         onChange={(e) => setTime(e.target.value)}
@@ -935,7 +935,7 @@ function AddReminder({ today, due, onAdd }: { today: string; due: LocalDateTime 
         setBusy(false);
       }}
     >
-      <input aria-label="Reminder date" type="date" className={cn(inputCls, 'w-auto flex-1')} value={date} min={today} onChange={(e) => setDate(e.target.value)} required />
+      <input aria-label="Reminder date" type="date" className={cn(inputCls, 'min-w-[9.5rem] flex-1')} value={date} min={today} onChange={(e) => setDate(e.target.value)} required />
       <input aria-label="Reminder time" type="time" className={cn(inputCls, 'w-28')} value={time} onChange={(e) => setTime(e.target.value)} required />
       <button type="submit" disabled={busy} className={cn(ghostBtn, 'border border-border')}>
         {busy ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Bell aria-hidden className="size-4" />}

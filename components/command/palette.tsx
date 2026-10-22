@@ -326,6 +326,8 @@ export function CommandPalette() {
                           )}
                         </Cmdk.List>
                       )}
+                      {/* The input's aria-controls must always point at a listbox, even while a panel shows. */}
+                      {status !== 'idle' && <Cmdk.List hidden />}
                       {status === 'pending' && <PendingPanel label={state.pendingLabel ?? 'Working…'} />}
                       {status === 'clarification' && state.response?.kind === 'clarification' && (
                         <ClarificationPanel response={state.response} onChoose={p.chooseOption} onRephrase={() => p.reset(true)} />

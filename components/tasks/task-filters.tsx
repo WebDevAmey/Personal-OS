@@ -9,7 +9,7 @@ import { cn } from '@/components/app/cn';
 import { PRIORITY_LABELS } from './types';
 
 const selectCls =
-  'h-8 rounded-md border border-border bg-background pr-7 pl-2 text-body-sm text-foreground hover:border-border-strong focus-visible:outline-2 focus-visible:outline-ring';
+  'h-8 max-w-40 rounded-md border border-border bg-background pr-7 pl-2 text-body-sm text-foreground hover:border-border-strong focus-visible:outline-2 focus-visible:outline-ring';
 
 export interface TaskFiltersProps {
   /** Which controls this view offers. */

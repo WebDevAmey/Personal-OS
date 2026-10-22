@@ -65,7 +65,7 @@ export const TaskRow = forwardRef<HTMLLIElement, TaskRowProps>(function TaskRow(
         aria-label={`Select ${task.title}`}
         className={cn(
           'size-4 shrink-0 cursor-pointer rounded-sm accent-[var(--brand)]',
-          selectionMode || selected ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100',
+          selectionMode || selected ? 'opacity-100' : 'hidden opacity-0 sm:block group-hover/row:opacity-100 group-focus-within/row:opacity-100',
         )}
       />
       <button

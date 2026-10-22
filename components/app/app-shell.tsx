@@ -155,7 +155,7 @@ function Frame({ counts, displayName, children }: { counts: NavCounts; displayNa
       <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
         <Dialog.Portal>
           <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/30 transition-opacity duration-180 data-ending-style:opacity-0 data-starting-style:opacity-0 md:hidden" />
-          <Dialog.Popup className="fixed inset-y-0 left-0 z-40 flex w-[min(280px,85vw)] flex-col border-r border-border bg-surface shadow-overlay transition-transform duration-240 data-ending-style:-translate-x-full data-starting-style:-translate-x-full md:hidden">
+          <Dialog.Popup className="fixed inset-y-0 left-0 z-40 flex w-[min(280px,85vw)] flex-col border-r border-border bg-surface shadow-overlay outline-none transition-transform duration-240 data-ending-style:-translate-x-full data-starting-style:-translate-x-full md:hidden">
             <Dialog.Title className="sr-only">Navigation</Dialog.Title>
             <Dialog.Close className="absolute top-2.5 right-2 grid size-8 place-items-center rounded-md text-subtle-foreground hover:bg-surface-2" aria-label="Close navigation">
               <X aria-hidden className="size-4" />
