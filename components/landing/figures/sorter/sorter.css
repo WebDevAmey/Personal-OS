@@ -1,0 +1,9 @@
+/* Fig 1, figure-scoped styles. */
+.iso .sorter-soft {
+  opacity: calc(var(--anatomy-halo-opacity) * 0.6);
+}
+
+.iso .sorter-hand {
+  fill: var(--anatomy-lit-top);
+  stroke-width: 0.7;
+}
