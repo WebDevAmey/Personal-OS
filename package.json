@@ -10,6 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "pnpm test:e2e:build && playwright test",
+    "test:e2e:build": "NEXT_PUBLIC_APP_URL=https://localhost:3443 DATABASE_URL=postgresql://aios:aios@localhost:5432/aios_ws5 next build --turbopack",
+    "test:e2e:run": "playwright test",
     "db:migrate": "prisma migrate deploy",
     "db:integrity": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/db-integrity.ts",
     "postinstall": "prisma generate"
@@ -64,6 +67,7 @@
     "prisma": "^7.9.1",
     "shadcn": "4.19.0",
     "tailwindcss": "^4",
+    "tsx": "4.23.12",
     "typescript": "^5",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.11"
