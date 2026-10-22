@@ -82,12 +82,35 @@ export function checkProductionEnv(env: Env = process.env): EnvCheck {
   return { ok: false, issues };
 }
 
+// ───────────── E2E scripted model (test-only seam, lib/ai/scripted-model.ts) ─────────────
+
+/** The second variable a test run must set, verbatim, to enable the scripted model. */
+export const SCRIPTED_MODEL_ACK = 'i-understand-this-is-not-production';
+
+/** A real production deployment, as opposed to a local `next start` (which also runs with NODE_ENV=production). */
+export function isProductionDeployment(env: Env = process.env): boolean {
+  return env.VERCEL_ENV === 'production' || (env.NODE_ENV === 'production' && env.VERCEL === '1');
+}
+
+/**
+ * True only when both E2E variables are set exactly and this is not a
+ * production deployment. getLanguageModel() returns the scripted model only
+ * when this holds.
+ */
+export function scriptedModelAllowed(env: Env = process.env): boolean {
+  return env.E2E_SCRIPTED_MODEL === '1' && env.E2E_ALLOW_SCRIPTED_MODEL === SCRIPTED_MODEL_ACK && !isProductionDeployment(env);
+}
+
 /**
  * Throws with every problem listed when NODE_ENV is production and the
  * contract is not met. Outside production it does nothing: dev and test use
- * fallbacks (memory email, memory rate limiter) on purpose.
+ * fallbacks (memory email, memory rate limiter) on purpose. A production
+ * deployment with the E2E scripted-model flag set never boots.
  */
 export function assertServerEnv(env: Env = process.env): void {
+  if (env.E2E_SCRIPTED_MODEL !== undefined && isProductionDeployment(env)) {
+    throw new Error('Invalid server environment:\n  - E2E_SCRIPTED_MODEL must not be set on a production deployment');
+  }
   if (env.NODE_ENV !== 'production') return;
   const check = checkProductionEnv(env);
   if (check.ok) return;
