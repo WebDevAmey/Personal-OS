@@ -18,7 +18,7 @@ export const SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
 ].join(' ');
 
-export function buildGoogleAuthUrl(state: string): string {
+export function buildGoogleAuthUrl(state: string, codeChallenge: string): string {
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   url.searchParams.set('client_id', process.env.GOOGLE_CLIENT_ID!);
   url.searchParams.set('redirect_uri', `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/google/callback`);
@@ -32,6 +32,9 @@ export function buildGoogleAuthUrl(state: string): string {
   url.searchParams.set('access_type', 'offline');
   url.searchParams.set('prompt', 'consent');
   url.searchParams.set('state', state);
+  // PKCE S256 (RFC 7636): the callback must present the matching verifier.
+  url.searchParams.set('code_challenge', codeChallenge);
+  url.searchParams.set('code_challenge_method', 'S256');
   return url.toString();
 }
 
@@ -48,9 +51,10 @@ export interface GoogleTokenResponse {
   scope?: string;
 }
 
-export async function exchangeGoogleCode(code: string): Promise<GoogleTokenResponse> {
+export async function exchangeGoogleCode(code: string, codeVerifier: string): Promise<GoogleTokenResponse> {
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
+    signal: AbortSignal.timeout(10_000),
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       code,
@@ -58,32 +62,19 @@ export async function exchangeGoogleCode(code: string): Promise<GoogleTokenRespo
       client_secret: process.env.GOOGLE_CLIENT_SECRET!,
       redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/google/callback`,
       grant_type: 'authorization_code',
+      code_verifier: codeVerifier,
     }),
   });
   if (!res.ok) {
     throw new Error(`Google token exchange failed: ${res.status}`);
   }
-  return res.json();
+  const data = await res.json();
+  if (typeof data?.access_token !== 'string' || typeof data?.id_token !== 'string') {
+    throw new Error('Google token exchange response missing access_token or id_token');
+  }
+  return data;
 }
 
-export interface GoogleIdTokenClaims {
-  sub: string;
-  email: string;
-  name?: string;
-  picture?: string;
-  // Google's proof that `email` was actually verified as belonging to this
-  // account (e.g. via a confirmation link), as opposed to merely being an
-  // address the account holder typed in somewhere. Google can return
-  // `email_verified: false` for a real, completable OAuth flow — callers
-  // MUST reject unverified emails before using them for account lookup or
-  // linking, or an attacker can take over any victim's account by signing
-  // up at a third party with the victim's (unverified) email address and
-  // then "signing in with Google" here.
-  email_verified?: boolean;
-}
-
-export function decodeGoogleIdToken(idToken: string): GoogleIdTokenClaims {
-  const payload = idToken.split('.')[1];
-  const json = Buffer.from(payload, 'base64url').toString('utf-8');
-  return JSON.parse(json);
-}
+// ID-token verification (signature via Google's JWKS, iss, aud, exp) lives
+// in ./google-id-token.ts.
+export { verifyGoogleIdToken, type GoogleIdTokenClaims } from './google-id-token';

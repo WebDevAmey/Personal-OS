@@ -10,18 +10,19 @@ import { Layers } from 'lucide-react';
 function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const token = searchParams.get('token');
+  const email = searchParams.get('email') || '';
 
+  const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!token) {
+    if (!email) {
       router.replace('/forgot-password');
     }
-  }, [token, router]);
+  }, [email, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,8 +33,8 @@ function ResetPasswordForm() {
       return;
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+    if (password.length < 12) {
+      setError('Password must be at least 12 characters');
       return;
     }
 
@@ -43,7 +44,7 @@ function ResetPasswordForm() {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify({ email, code, newPassword: password }),
       });
 
       const data = await res.json();
@@ -69,7 +70,9 @@ function ResetPasswordForm() {
             <Layers className="h-5 w-5 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-neutral-900">Reset password</h1>
-          <p className="text-sm text-neutral-500">Enter your new password</p>
+          <p className="text-sm text-neutral-500">
+            Enter the 6-digit code sent to <strong>{email}</strong> and your new password
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -80,6 +83,21 @@ function ResetPasswordForm() {
           )}
 
           <div className="space-y-2">
+            <label className="text-sm font-medium text-neutral-700">Reset code</label>
+            <Input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              className="text-center text-2xl tracking-[0.5em]"
+              maxLength={6}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
             <label className="text-sm font-medium text-neutral-700">New password</label>
             <Input
               type="password"
@@ -87,7 +105,8 @@ function ResetPasswordForm() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
-              minLength={8}
+              minLength={12}
+              maxLength={128}
             />
           </div>
 
@@ -99,11 +118,12 @@ function ResetPasswordForm() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="••••••••"
               required
-              minLength={8}
+              minLength={12}
+              maxLength={128}
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" className="w-full" disabled={loading || code.length !== 6}>
             {loading ? 'Resetting...' : 'Reset password'}
           </Button>
         </form>

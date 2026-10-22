@@ -1,147 +1,130 @@
+// @vitest-environment node
+// POST /api/auth/verify-otp (SIGN_UP) against the real test database.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { POST } from './route';
-import bcrypt from 'bcrypt';
+import { prisma } from '@/lib/prisma';
+import { outbox } from '@/lib/email/transport';
+import { verifyPassword } from '@/lib/auth/password';
+import { apiRequest, authEventNames, cookieHeaderFrom, createUser, uniqueEmail } from '@/lib/auth/test-helpers';
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
-    verificationToken: { findFirst: vi.fn(), updateMany: vi.fn(), delete: vi.fn() },
-    user: { update: vi.fn() },
+const deferred = vi.hoisted(() => [] as (() => Promise<void>)[]);
+vi.mock('next/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/server')>()),
+  after: (task: () => Promise<void>) => {
+    deferred.push(task);
   },
 }));
 
+const { POST: signup } = await import('../signup/route');
+const { POST: verify } = await import('./route');
+
+const PASSWORD = 'a long enough password';
+
+async function signUp(email: string, password = PASSWORD) {
+  const res = await signup(apiRequest('/api/auth/signup', { email, password }));
+  while (deferred.length) await deferred.shift()!();
+  const mail = outbox.filter((m) => m.to === email).at(-1)!;
+  return { cookie: cookieHeaderFrom(res), code: mail.text.match(/\b(\d{6})\b/)![1] };
+}
+
+function wrong(code: string) {
+  return code === '000000' ? '111111' : '000000';
+}
+
+beforeEach(() => {
+  deferred.length = 0;
+});
+
 describe('POST /api/auth/verify-otp', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('marks the user verified on a correct SIGN_UP code', async () => {
-    const otpHash = await bcrypt.hash('123456', 10);
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      verificationToken: { findFirst: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> };
-      user: { update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
-      id: 'vt-1', email: 'a@b.com', type: 'SIGN_UP', otpHash, attempts: 0, expiresAt: new Date(Date.now() + 60000),
-    });
-    mockedPrisma.verificationToken.updateMany.mockResolvedValue({ count: 1 });
-
-    const req = new Request('http://localhost/api/auth/verify-otp', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', code: '123456', type: 'SIGN_UP' }),
-    });
-    const res = await POST(req);
-
+  it('creates the verified account with the sign-up password on a correct code from the same browser', async () => {
+    const email = uniqueEmail();
+    const { cookie, code } = await signUp(email);
+    const res = await verify(apiRequest('/api/auth/verify-otp', { email, code, type: 'SIGN_UP' }, { cookie }));
     expect(res.status).toBe(200);
-    expect(mockedPrisma.verificationToken.updateMany).toHaveBeenCalledWith({
-      where: { id: 'vt-1', attempts: { lt: 5 } },
-      data: { attempts: { increment: 1 } },
-    });
-    expect(mockedPrisma.user.update).toHaveBeenCalledWith({ where: { email: 'a@b.com' }, data: { emailVerified: true } });
-    expect(mockedPrisma.verificationToken.delete).toHaveBeenCalledWith({ where: { id: 'vt-1' } });
+    expect(res.headers.getSetCookie()[0]).toMatch(/^signup_binding=; .*Max-Age=0/);
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    expect(user.emailVerified).toBe(true);
+    expect(await verifyPassword(PASSWORD, user.password!)).toBe(true);
+    expect(await prisma.verificationToken.count({ where: { email } })).toBe(0);
+    expect(await authEventNames({ email })).toEqual(['OTP_SENT', 'OTP_VERIFIED']);
   });
 
-  it('rejects an incorrect code and atomically reserves the attempt', async () => {
-    const otpHash = await bcrypt.hash('123456', 10);
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      verificationToken: { findFirst: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
-      id: 'vt-1', email: 'a@b.com', type: 'SIGN_UP', otpHash, attempts: 0, expiresAt: new Date(Date.now() + 60000),
-    });
-    mockedPrisma.verificationToken.updateMany.mockResolvedValue({ count: 1 });
-
-    const req = new Request('http://localhost/api/auth/verify-otp', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', code: '000000', type: 'SIGN_UP' }),
-    });
-    const res = await POST(req);
-
-    expect(res.status).toBe(400);
-    expect(mockedPrisma.verificationToken.updateMany).toHaveBeenCalledWith({
-      where: { id: 'vt-1', attempts: { lt: 5 } },
-      data: { attempts: { increment: 1 } },
-    });
+  it('accepts the body the verify-otp page sends ({ email, code, type })', async () => {
+    const email = uniqueEmail();
+    const { cookie, code } = await signUp(email);
+    const res = await verify(apiRequest('/api/auth/verify-otp', { email, code, type: 'SIGN_UP' }, { cookie }));
+    expect(res.status).toBe(200);
   });
 
-  it('rejects when no matching token exists (expired, wrong email, or already used)', async () => {
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      verificationToken: { findFirst: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue(null);
-
-    const req = new Request('http://localhost/api/auth/verify-otp', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', code: '123456', type: 'SIGN_UP' }),
-    });
-    const res = await POST(req);
+  it('rejects the legacy { otp } field name instead of silently passing', async () => {
+    const email = uniqueEmail();
+    const { cookie, code } = await signUp(email);
+    const res = await verify(apiRequest('/api/auth/verify-otp', { email, otp: code, type: 'SIGN_UP' }, { cookie }));
     expect(res.status).toBe(400);
   });
 
-  it('rejects when the atomic reservation fails (max attempts already reserved)', async () => {
-    const otpHash = await bcrypt.hash('123456', 10);
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      verificationToken: { findFirst: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
-      user: { update: ReturnType<typeof vi.fn> };
-    };
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
-      id: 'vt-1', email: 'a@b.com', type: 'SIGN_UP', otpHash, attempts: 5, expiresAt: new Date(Date.now() + 60000),
-    });
-    mockedPrisma.verificationToken.updateMany.mockResolvedValue({ count: 0 });
-
-    const req = new Request('http://localhost/api/auth/verify-otp', {
-      method: 'POST',
-      body: JSON.stringify({ email: 'a@b.com', code: '123456', type: 'SIGN_UP' }),
-    });
-    const res = await POST(req);
+  it('rejects the right code entered in a different browser (no binding cookie) and creates nothing', async () => {
+    const email = uniqueEmail();
+    const { code } = await signUp(email);
+    const res = await verify(apiRequest('/api/auth/verify-otp', { email, code }));
     expect(res.status).toBe(400);
-    expect(mockedPrisma.user.update).not.toHaveBeenCalled();
+    expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
   });
 
-  it('caps total guesses at MAX_ATTEMPTS even under concurrent requests (atomic reservation closes the check-then-act race)', async () => {
-    const otpHash = await bcrypt.hash('123456', 10);
-    const { prisma } = await import('@/lib/prisma');
-    const mockedPrisma = prisma as unknown as {
-      verificationToken: { findFirst: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
-    };
+  it('rejects an incorrect code and reserves the attempt', async () => {
+    const email = uniqueEmail();
+    const { cookie, code } = await signUp(email);
+    const res = await verify(apiRequest('/api/auth/verify-otp', { email, code: wrong(code) }, { cookie }));
+    expect(res.status).toBe(400);
+    const token = await prisma.verificationToken.findFirstOrThrow({ where: { email } });
+    expect(token.attempts).toBe(1);
+    expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
+  });
 
-    mockedPrisma.verificationToken.findFirst.mockResolvedValue({
-      id: 'vt-1', email: 'a@b.com', type: 'SIGN_UP', otpHash, attempts: 0, expiresAt: new Date(Date.now() + 60000),
-    });
-
-    let attempts = 0;
-    mockedPrisma.verificationToken.updateMany.mockImplementation(async () => {
-      if (attempts >= 5) return { count: 0 };
-      attempts += 1;
-      return { count: 1 };
-    });
-
-    const bcryptCompareSpy = vi.spyOn(bcrypt, 'compare');
-
-    const requests = Array.from({ length: 50 }, () =>
-      new Request('http://localhost/api/auth/verify-otp', {
-        method: 'POST',
-        body: JSON.stringify({ email: 'a@b.com', code: '000000', type: 'SIGN_UP' }),
-      }),
+  it('caps guesses at 5 per token even under concurrent requests', async () => {
+    const email = uniqueEmail();
+    const { cookie, code } = await signUp(email);
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => verify(apiRequest('/api/auth/verify-otp', { email, code: wrong(code) }, { cookie }))),
     );
+    const bodies = await Promise.all(results.map((r) => r.json()));
+    expect(bodies.filter((b) => b.error === 'Incorrect code')).toHaveLength(5);
+    // The right code no longer works once the budget is spent.
+    const after = await verify(apiRequest('/api/auth/verify-otp', { email, code }, { cookie }));
+    expect(after.status).toBe(400);
+  }, 20_000);
 
-    await Promise.all(requests.map((req) => POST(req)));
-
-    expect(bcryptCompareSpy.mock.calls.length).toBeLessThanOrEqual(5);
-    expect(attempts).toBe(5);
-
-    bcryptCompareSpy.mockRestore();
+  it('rejects when no matching token exists', async () => {
+    const res = await verify(apiRequest('/api/auth/verify-otp', { email: uniqueEmail(), code: '123456' }));
+    expect(res.status).toBe(400);
   });
 
-  it('returns 400 for a malformed JSON body instead of throwing', async () => {
-    const req = new Request('http://localhost/api/auth/verify-otp', {
-      method: 'POST',
-      body: 'not-json',
-    });
-    const res = await POST(req);
+  it('is single use', async () => {
+    const email = uniqueEmail();
+    const { cookie, code } = await signUp(email);
+    const [a, b] = await Promise.all([
+      verify(apiRequest('/api/auth/verify-otp', { email, code }, { cookie })),
+      verify(apiRequest('/api/auth/verify-otp', { email, code }, { cookie })),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 400]);
+    expect(await prisma.user.count({ where: { email } })).toBe(1);
+  });
+
+  it('does not accept PASSWORD_RESET codes (reset-password verifies those)', async () => {
+    const res = await verify(apiRequest('/api/auth/verify-otp', { email: uniqueEmail(), code: '123456', type: 'PASSWORD_RESET' }));
     expect(res.status).toBe(400);
+  });
+
+  it('does not change the password of an account that became verified meanwhile', async () => {
+    const email = uniqueEmail();
+    const { cookie, code } = await signUp(email);
+    const owner = await createUser({ email, password: 'the owners own password' });
+    const res = await verify(apiRequest('/api/auth/verify-otp', { email, code }, { cookie }));
+    expect(res.status).toBe(200);
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: owner.id } });
+    expect(await verifyPassword('the owners own password', row.password!)).toBe(true);
+  });
+
+  it('returns 400 for a malformed JSON body', async () => {
+    expect((await verify(apiRequest('/api/auth/verify-otp', '{nope'))).status).toBe(400);
   });
 });
