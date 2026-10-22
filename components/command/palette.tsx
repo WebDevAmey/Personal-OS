@@ -35,6 +35,9 @@ import { ListeningMeter, VoiceButton } from './voice-button';
 import { AnswerPanel, ClarificationPanel, ErrorPanel, ExecutedPanel, PendingPanel, ProposalPanel } from './panels';
 import { SPRING_PANEL, SPRING_LAYOUT } from '@/lib/ease';
 
+/** Dispatched on window to open the palette already listening. */
+export const START_VOICE_EVENT = 'pos:start-voice';
+
 export const NAV_ITEMS = [
   { label: 'Today', href: '/today', icon: Sun, keys: 'G T' },
   { label: 'Inbox', href: '/tasks/inbox', icon: Inbox, keys: 'G I' },
@@ -75,6 +78,16 @@ export function CommandPalette() {
       });
     },
   });
+
+  // The shell's mic button and ⌘⇧. open the palette and ask it to listen.
+  useEffect(() => {
+    const onStart = () => {
+      p.setOpen(true);
+      if (voice.status === 'idle') voice.start();
+    };
+    window.addEventListener(START_VOICE_EVENT, onStart);
+    return () => window.removeEventListener(START_VOICE_EVENT, onStart);
+  }, [p, voice]);
 
   // Closing the palette stops listening (FR-502).
   useEffect(() => {

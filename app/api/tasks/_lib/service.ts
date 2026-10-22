@@ -40,6 +40,7 @@ export async function listView(userId: string, q: ViewQuery, clock?: Clock): Pro
   if (q.priority !== undefined) filter.priority = [q.priority];
   if (q.tag) filter.tags = [q.tag.toLowerCase()];
   if (q.view === 'project' && !q.projectId) filter.projectId = null;
+  else if (q.view !== 'project' && q.projectId) filter.projectId = q.projectId;
   const opts = { cursor: q.cursor ?? null, limit: q.limit ?? 100, sort: q.sort as TaskSort | undefined, filter, timeZone: c.timeZone, now: c.now };
   const page = q.q
     ? await searchTasksByQuery(userId, q.q, opts)
