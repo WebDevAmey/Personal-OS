@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { db } from '@/db/client';
-import { memories, users } from '@/db/schema';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import type { User } from '@/lib/generated/prisma/client';
+import { deleteUsers, makeUser } from '@/lib/test/factories';
 import { saveMemory, searchMemory } from './queries';
-import { inArray } from 'drizzle-orm';
 
 vi.mock('@/lib/ai/embeddings', () => ({
   embed: vi.fn(async (text: string) => {
@@ -12,74 +11,59 @@ vi.mock('@/lib/ai/embeddings', () => ({
     // would make ORDER BY a no-op / insertion-order artifact).
     const vector = new Array(512).fill(0);
     if (text.includes('Rahul') || text.includes('API')) {
-      // "Rahul/API" topic: unit vector along the first 10 axes.
       for (let i = 0; i < 10; i++) vector[i] = 1;
     } else {
-      // Unrelated topic: unit vector along a disjoint set of axes
-      // (orthogonal to the topic above -> cosine distance of 1).
       for (let i = 500; i < 510; i++) vector[i] = 1;
     }
     return vector;
   }),
 }));
 
-// Prefixed so these fixture rows can never collide with another test
-// file's fixture rows in the same shared `users` table (e.g.
-// lib/tasks/queries.test.ts), which matters because Vitest runs test
-// files in parallel by default and each file's beforeEach only deletes
-// its own scoped rows.
-const USER_A = 'memory-test-user-a';
-const USER_B = 'memory-test-user-b';
+// Compatibility adapter over lib/memory/repo.ts; same signatures and return
+// shape as the Drizzle-era module.
+let A: User;
+let B: User;
 
 beforeEach(async () => {
-  await db.delete(memories).where(inArray(memories.userId, [USER_A, USER_B]));
-  await db.delete(users).where(inArray(users.id, [USER_A, USER_B]));
-  await db.insert(users).values([
-    { id: USER_A, email: 'memory-test-user-a@test.com' },
-    { id: USER_B, email: 'memory-test-user-b@test.com' },
-  ]);
+  await deleteUsers(A, B);
+  A = await makeUser({ label: 'mem_compat_a' });
+  B = await makeUser({ label: 'mem_compat_b' });
 });
 
-describe('memory domain library', () => {
+afterAll(async () => deleteUsers(A, B));
+
+describe('memory domain library (compat adapter)', () => {
   it('stores a memory with its embedding', async () => {
-    const memory = await saveMemory(USER_A, 'Ask Rahul about the API tomorrow');
-    expect(memory.userId).toBe(USER_A);
+    const memory = await saveMemory(A.id, 'Ask Rahul about the API tomorrow');
+    expect(memory.userId).toBe(A.id);
     expect(memory.content).toBe('Ask Rahul about the API tomorrow');
   });
 
-  // Finding 1: the real leak was here, not in searchMemory. save_memory is
-  // wrapped in idempotent(...) (lib/ai/tools/index.ts), so whatever
-  // saveMemory returns gets serialized into agent_actions.output jsonb (and
-  // back to the model as the tool result) on every single memory save - a
-  // raw `.returning()` would leak the 512-float embedding on every save.
+  // save_memory is wrapped in idempotent(...) (lib/ai/tools/index.ts), so
+  // whatever saveMemory returns is serialized into AgentAction.output and back
+  // to the model; the 512-float embedding must never be part of it.
   it('does not include the raw embedding vector in the saved memory it returns', async () => {
-    const memory = await saveMemory(USER_A, 'Ask Rahul about the API tomorrow');
+    const memory = await saveMemory(A.id, 'Ask Rahul about the API tomorrow');
     expect(memory).not.toHaveProperty('embedding');
     expect(Object.keys(memory).sort()).toEqual(['content', 'createdAt', 'id', 'userId']);
   });
 
   it('returns the closest memory first for a semantically related query', async () => {
-    await saveMemory(USER_A, 'Ask Rahul about the API tomorrow');
-    await saveMemory(USER_A, 'Buy milk on the way home');
-    const results = await searchMemory(USER_A, 'API', 5);
+    await saveMemory(A.id, 'Ask Rahul about the API tomorrow');
+    await saveMemory(A.id, 'Buy milk on the way home');
+    const results = await searchMemory(A.id, 'API', 5);
     expect(results[0].content).toBe('Ask Rahul about the API tomorrow');
   });
 
-  it('only searches the calling user\'s memories', async () => {
-    await saveMemory(USER_B, 'Ask Rahul about the API tomorrow');
-    const results = await searchMemory(USER_A, 'API', 5);
+  it("only searches the calling user's memories", async () => {
+    await saveMemory(B.id, 'Ask Rahul about the API tomorrow');
+    const results = await searchMemory(A.id, 'API', 5);
     expect(results).toHaveLength(0);
   });
 
-  // Raw embedding vectors (512 floats/row) must never leave this query -
-  // they'd otherwise get serialized straight into the model's context via
-  // lib/ai/tools/index.ts's search_memory tool result. (search_memory is not
-  // idempotency-wrapped, so this is defense-in-depth rather than the
-  // audit-log leak itself - see the saveMemory test above for that.) The
-  // caller only needs the vector to drive ORDER BY, never the values back.
   it('does not include the raw embedding vector in search results', async () => {
-    await saveMemory(USER_A, 'Ask Rahul about the API tomorrow');
-    const results = await searchMemory(USER_A, 'API', 5);
+    await saveMemory(A.id, 'Ask Rahul about the API tomorrow');
+    const results = await searchMemory(A.id, 'API', 5);
     expect(results).toHaveLength(1);
     expect(results[0]).not.toHaveProperty('embedding');
     expect(Object.keys(results[0]).sort()).toEqual(['content', 'createdAt', 'id', 'userId']);
