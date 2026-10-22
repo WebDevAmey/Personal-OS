@@ -986,18 +986,22 @@ unless the rehearsal is replayed there.
 
 ### 7.4 Token encryption (ADR-011)
 
-`scripts/encrypt-integration-tokens.ts` is idempotent:
+`scripts/encrypt-integration-tokens.ts` (`pnpm db:encrypt-tokens`, `-- --check` for a dry run) is idempotent:
 
-1. Select `IntegrationAccount` rows whose `accessToken` or `refreshToken` doesn't start with `v1:`.
-2. Seal each value with AES-256-GCM: a random 96-bit IV, the key from `TOKEN_ENCRYPTION_KEY`, and
-   `userId:provider` as additional authenticated data.
-3. Write back with `updateMany({ where: { id, accessToken: <old> } })` so a concurrent refresh isn't overwritten.
-4. Print counts only. It never prints values.
-5. Run it again to confirm 0 remaining (I9), then deploy M6b.
+1. Select `IntegrationAccount` rows whose `accessToken` or `refreshToken` isn't `v2:`.
+2. Seal each value as `v2:` with AES-256-GCM: a random 96-bit IV, the key from `TOKEN_ENCRYPTION_KEY`, and
+   `userId:provider:column` as additional authenticated data. `v1:` values (no AAD) are decrypted first.
+3. Write back with `updateMany({ where: { id, accessToken: <old>, refreshToken: <old> } })` so a concurrent
+   refresh isn't overwritten.
+4. Print counts only. It never prints values. It exits 1 while rows remain.
+5. Run it again to confirm 0 remaining (I9), then validate the constraint added (NOT VALID) by
+   `20261022120000_integration_token_format_check`:
+   `ALTER TABLE "IntegrationAccount" VALIDATE CONSTRAINT "IntegrationAccount_token_format_check";`
 
-During the window between M6 and M6b, the app's read path (`lib/integrations/google/tokens.ts`) treats a
-non-`v1:` value as `INTEGRATION_AUTH_EXPIRED`, which tells the user to reconnect. It never uses plaintext.
-That keeps the window safe even if the script hasn't run yet.
+The app's read path (`lib/integrations/google/refresh-token.ts`) treats a plaintext value as
+`INTEGRATION_AUTH_EXPIRED` (reason `legacy_plaintext`), which tells the user to reconnect. It never uses
+plaintext, so the window before the script runs is safe. Revocation is the one exception: it still sends a
+plaintext refresh token to Google's revoke endpoint so the grant can be withdrawn.
 
 Key rotation: introduce `v2:` with `TOKEN_ENCRYPTION_KEY_PREVIOUS` kept for decryption, and re-run the
 script with `--rotate`.
