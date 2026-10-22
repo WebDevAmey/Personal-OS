@@ -20,22 +20,36 @@ export function SecurityPanel({ passkeys, email }: { passkeys: PasskeyDTO[]; ema
   const [supported, setSupported] = useState<boolean | null>(null);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
+  const [needPassword, setNeedPassword] = useState(false);
+  const [password, setPassword] = useState('');
+  const [reauthError, setReauthError] = useState('');
   const [busy, setBusy] = useState<null | 'add' | 'out' | 'all'>(null);
   const [confirmAll, setConfirmAll] = useState(false);
   useEffect(() => setSupported(passkeysSupported()), []);
 
   const add = async () => {
     setBusy('add');
-    const r = await registerPasskey(name.trim() || undefined);
+    const r = await registerPasskey(name.trim() || undefined, needPassword ? password : undefined);
     setBusy(null);
     if (r.ok) {
       notify({ title: 'Passkey added', description: 'Other sessions were signed out for safety.', tone: 'success' });
-      setAdding(false);
-      setName('');
+      closeAdd();
       router.refresh();
+    } else if (r.reauth) {
+      setNeedPassword(true);
+      setPassword('');
+      setReauthError(r.message);
     } else if (!r.cancelled) {
       notify({ title: r.message, tone: 'error' });
     }
+  };
+
+  const closeAdd = () => {
+    setAdding(false);
+    setName('');
+    setNeedPassword(false);
+    setPassword('');
+    setReauthError('');
   };
 
   const signOut = async (everywhere: boolean) => {
@@ -80,11 +94,32 @@ export function SecurityPanel({ passkeys, email }: { passkeys: PasskeyDTO[]; ema
               Passkey name
             </label>
             <input id="passkey-name" className={cn(inputCls, 'max-w-xs')} placeholder="Name, e.g. Work laptop" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} autoFocus />
-            <button type="submit" disabled={busy === 'add'} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-3 text-body font-medium text-brand-foreground hover:bg-brand/90 disabled:opacity-50">
+            {needPassword && (
+              <div className="flex w-full flex-col gap-1.5">
+                <p id="passkey-reauth-msg" role="alert" className="text-body-sm text-foreground">
+                  {reauthError || 'Enter your password to add a passkey.'}
+                </p>
+                <label htmlFor="passkey-password" className="text-body-sm text-muted-foreground">
+                  Password for {email}
+                </label>
+                <input
+                  id="passkey-password"
+                  type="password"
+                  autoComplete="current-password"
+                  className={cn(inputCls, 'max-w-xs')}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  aria-describedby="passkey-reauth-msg"
+                  required
+                  autoFocus
+                />
+              </div>
+            )}
+            <button type="submit" disabled={busy === 'add' || (needPassword && !password)} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-3 text-body font-medium text-brand-foreground hover:bg-brand/90 disabled:opacity-50">
               {busy === 'add' && <Loader2 aria-hidden className="size-4 animate-spin" />}
               Continue
             </button>
-            <button type="button" onClick={() => setAdding(false)} className="h-8 rounded-md px-3 text-body hover:bg-surface-2">
+            <button type="button" onClick={closeAdd} className="h-8 rounded-md px-3 text-body hover:bg-surface-2">
               Cancel
             </button>
           </form>
