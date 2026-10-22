@@ -105,6 +105,8 @@ export async function getRun(userId: string, runId: string): Promise<AgentRun | 
 // ───────────────────────── ProposedAction ─────────────────────────
 
 export interface NewProposal {
+  /** Caller-chosen id (email drafts need it before insert for the Message-ID). */
+  id?: string;
   agentRunId: string;
   kind: string;
   args: Prisma.InputJsonValue;
