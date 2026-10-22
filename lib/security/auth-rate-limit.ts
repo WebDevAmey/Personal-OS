@@ -34,6 +34,8 @@ export const AUTH_LIMITS = {
   // Total reset-code guesses per email across all tokens (SEC-B-002).
   'reset-password': { ip: { limit: 20, windowMs: 15 * 60_000 }, email: { limit: 10, windowMs: 24 * 60 * 60_000 } },
   'passkey-options': { ip: { limit: 10, windowMs: 60_000 } },
+  // Password re-entry before a credential change (SEC-R-005).
+  reauth: { ip: { limit: 10, windowMs: 15 * 60_000 }, email: { limit: 10, windowMs: 15 * 60_000 } },
   'passkey-verify': { ip: { limit: 20, windowMs: 15 * 60_000 } },
   oauth: { ip: { limit: 30, windowMs: 15 * 60_000 } },
 } satisfies Record<string, { ip?: LimitRule; email?: LimitRule }>;

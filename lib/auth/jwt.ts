@@ -42,7 +42,12 @@ export async function signSessionToken(payload: SessionPayload): Promise<string>
     .sign(currentSecret());
 }
 
-async function verifyWith(token: string, secret: Uint8Array): Promise<SessionPayload | null> {
+/** A verified payload plus its `iat` (seconds since the epoch). */
+export interface SessionClaims extends SessionPayload {
+  issuedAt: number;
+}
+
+async function verifyWith(token: string, secret: Uint8Array): Promise<SessionClaims | null> {
   try {
     const { payload } = await jwtVerify(token, secret, {
       algorithms: ['HS256'],
@@ -50,10 +55,10 @@ async function verifyWith(token: string, secret: Uint8Array): Promise<SessionPay
       audience: JWT_AUDIENCE,
       requiredClaims: ['exp', 'iat'],
     });
-    if (typeof payload.userId !== 'string' || typeof payload.sessionVersion !== 'number') {
+    if (typeof payload.userId !== 'string' || typeof payload.sessionVersion !== 'number' || typeof payload.iat !== 'number') {
       return null;
     }
-    return { userId: payload.userId, sessionVersion: payload.sessionVersion };
+    return { userId: payload.userId, sessionVersion: payload.sessionVersion, issuedAt: payload.iat };
   } catch {
     return null;
   }
@@ -64,6 +69,12 @@ async function verifyWith(token: string, secret: Uint8Array): Promise<SessionPay
  * rotation). Tokens are only ever signed with the current secret.
  */
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
+  const claims = await verifySessionClaims(token);
+  return claims ? { userId: claims.userId, sessionVersion: claims.sessionVersion } : null;
+}
+
+/** As verifySessionToken, but also returns when the token was issued (sign-in time). */
+export async function verifySessionClaims(token: string): Promise<SessionClaims | null> {
   const current = await verifyWith(token, currentSecret());
   if (current) return current;
   const previous = previousSecret();

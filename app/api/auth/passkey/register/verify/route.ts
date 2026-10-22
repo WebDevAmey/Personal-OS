@@ -3,11 +3,16 @@
 //
 // The user's registration challenge is consumed atomically before
 // verification (single use, success or failure; the client asks for new
-// options to retry). Adding a credential bumps sessionVersion, so sessions
-// issued before the change are revoked; this browser gets a fresh cookie.
+// options to retry). The challenge only exists after options/route.ts checked
+// for a recent sign-in or a re-entered password (SEC-R-005).
+//
+// Adding a credential does NOT bump sessionVersion: signing the owner out
+// everywhere would only help someone who registered a passkey with a stolen
+// session (the real user is logged out, the attacker keeps a cookie).
+// Removing a credential or "sign out everywhere" is what revokes sessions.
 import { z } from 'zod';
 import { verifyRegistrationResponse, type RegistrationResponseJSON } from '@simplewebauthn/server';
-import { requireUser, createSessionCookie } from '@/lib/auth/session';
+import { requireUser } from '@/lib/auth/session';
 import { prisma } from '@/lib/prisma';
 import { RP_ID, ORIGIN } from '@/lib/auth/webauthn';
 import { consumeRegistrationChallenge } from '@/lib/auth/passkey-challenge';
@@ -72,29 +77,19 @@ export async function POST(req: Request) {
     ? rawTransports.filter((t): t is string => typeof t === 'string')
     : [];
 
-  const [, user] = await prisma.$transaction([
-    prisma.passkeyCredential.create({
-      data: {
-        id: credential.id,
-        userId: session.userId,
-        publicKey: Buffer.from(credential.publicKey),
-        counter: BigInt(credential.counter),
-        transports,
-        backedUp: credentialBackedUp,
-        deviceType: credentialDeviceType,
-        name,
-      },
-    }),
-    prisma.user.update({
-      where: { id: session.userId },
-      data: { sessionVersion: { increment: 1 } },
-      select: { id: true, sessionVersion: true },
-    }),
-  ]);
+  await prisma.passkeyCredential.create({
+    data: {
+      id: credential.id,
+      userId: session.userId,
+      publicKey: Buffer.from(credential.publicKey),
+      counter: BigInt(credential.counter),
+      transports,
+      backedUp: credentialBackedUp,
+      deviceType: credentialDeviceType,
+      name,
+    },
+  });
 
   await recordAuthEvent({ event: 'PASSKEY_ADDED', req, userId: session.userId });
-  return Response.json(
-    { message: 'Passkey registered' },
-    { headers: noStoreHeaders({ 'Set-Cookie': await createSessionCookie(user) }) },
-  );
+  return Response.json({ message: 'Passkey registered' }, { headers: noStoreHeaders() });
 }
