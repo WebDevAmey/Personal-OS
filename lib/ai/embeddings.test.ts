@@ -3,7 +3,10 @@ import { embed } from './embeddings';
 
 const originalFetch = global.fetch;
 
-beforeEach(() => { global.fetch = originalFetch; });
+beforeEach(() => {
+  global.fetch = originalFetch;
+  vi.stubEnv('VOYAGE_API_KEY', 'test-voyage-key');
+});
 
 describe('embed', () => {
   it('returns a 512-dimension vector for voyage-3-lite', async () => {
@@ -19,5 +22,12 @@ describe('embed', () => {
   it('throws when the Voyage API returns an error status', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'unauthorized' }) as unknown as typeof fetch;
     await expect(embed('anything')).rejects.toThrow('Voyage embedding request failed');
+  });
+
+  it('refuses to call Voyage when no API key is configured', async () => {
+    vi.stubEnv('VOYAGE_API_KEY', '');
+    global.fetch = vi.fn() as unknown as typeof fetch;
+    await expect(embed('anything')).rejects.toThrow('not configured');
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
