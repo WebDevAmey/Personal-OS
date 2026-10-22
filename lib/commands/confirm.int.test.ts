@@ -1,9 +1,10 @@
 // Confirmation flows, idempotency and the security cases of docs/04 §8.4,
 // §10 and §11, against the real test database with fake model and Google.
 import { randomUUID } from 'node:crypto';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import type { User } from '@/lib/generated/prisma/client';
 import { deleteUsers, makeTask, testPrisma as prisma } from '@/lib/test/factories';
+import { checkRateLimit, resetMemoryRateLimits } from '@/lib/rate-limit';
 import { floatingDate } from '@/lib/time';
 import { handleCommand, handleConfirm } from './service';
 import { command, connectGoogle, eventCount, expectKind, makeCommandUser, NOW, resolveStep, TODAY } from './test-fixtures';
@@ -306,6 +307,30 @@ describe('failures and metrics', () => {
     const res = await handleCommand(u.id, { clientRequestId: randomUUID(), input: 'hello' }, deps);
     expect(res).toMatchObject({ kind: 'error', error: { code: 'RATE_LIMITED', retryAfterMs: 30_000 } });
     expect(await prisma.agentRun.count({ where: { userId: u.id } })).toBe(0);
+  });
+
+  it('SEC-R-003: the per-user daily command budget (COMMAND_DAILY_LIMIT) is enforced through the shared limiter', async () => {
+    vi.stubEnv('COMMAND_DAILY_LIMIT', '2');
+    resetMemoryRateLimits();
+    try {
+      const u = await makeCommandUser(users);
+      const other = await makeCommandUser(users);
+      const run = (userId: string) => {
+        const deps = { ...fakeDeps({ model: scriptedModel([], 'Hi.'), now: NOW }), rateLimit: checkRateLimit };
+        return handleCommand(userId, { clientRequestId: randomUUID(), input: 'hello' }, deps);
+      };
+      expect((await run(u.id)).kind).not.toBe('error');
+      expect((await run(u.id)).kind).not.toBe('error');
+      const third = await run(u.id);
+      expect(third).toMatchObject({ kind: 'error', error: { code: 'RATE_LIMITED' } });
+      expect(third.kind === 'error' && third.error.message).toMatch(/today/);
+      expect(await prisma.agentRun.count({ where: { userId: u.id } })).toBe(2);
+      // Budgets are per user.
+      expect((await run(other.id)).kind).not.toBe('error');
+    } finally {
+      vi.unstubAllEnvs();
+      resetMemoryRateLimits();
+    }
   });
 
   it('task-only work succeeds without Google; Google tools set needsReconnect', async () => {
