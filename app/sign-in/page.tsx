@@ -57,7 +57,7 @@ function SignInForm() {
     setPasskeyLoading(true);
     const r = await signInWithPasskey();
     setPasskeyLoading(false);
-    if (r.ok) router.push(callbackUrl);
+    if (r.ok) router.push(safeCallback(callbackUrl));
     else if (!r.cancelled) setError(r.message);
   };
 
