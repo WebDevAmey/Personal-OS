@@ -1,96 +1,89 @@
-import { generateObject } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
-import { z } from 'zod';
-import { searchTasks } from '@/lib/tasks/queries';
+// inngest/daily-briefing.ts — Inngest functions for the morning briefing
+// (ADR-010). Thin adapters: all logic lives in lib/briefing/service.ts.
+//
+//  briefing-scheduler  cron every 15 min → PENDING run + one event per due user
+//  briefing-generate   per user: concurrency 1 per userId, idempotency per
+//                      dedupeKey (`userId-localDate`, or `…-rN` for a retry),
+//                      3 retries with Inngest's exponential backoff; onFailure
+//                      marks the run FAILED. The DB unique (userId, localDate)
+//                      and the claim are the real duplicate guard.
+import { createCalendarCapability } from '@/lib/integrations/calendar/client';
+import { createGmailCapability } from '@/lib/integrations/gmail/client';
+import { getFreshAccessToken } from '@/lib/integrations/google/refresh-token';
+import { embed } from '@/lib/ai/embeddings';
+import { logger } from '@/lib/observability/logger';
+import { briefingModelId, getBriefingModel } from '@/lib/briefing/model';
+import {
+  GENERATE_RETRIES,
+  handleBriefingFailure,
+  runBriefingGenerate,
+  runSchedulerTick,
+  type JobDeps,
+  type StepLike,
+} from '@/lib/briefing/service';
+import { BRIEFING_EVENT } from '@/lib/briefing/types';
+import type { BriefingEventPayload } from '@/lib/briefing/events';
 import { inngest } from './client';
-import type { EmailCapability, CalendarCapability } from '@/lib/integrations/types';
 
-const briefingSchema = z.object({
-  attentionItems: z.array(z.string()),
-  digestItems: z.array(z.string()),
-});
-
-export async function generateBriefing(ctx: { userId: string; email: EmailCapability; calendar: CalendarCapability }) {
-  const [emails, events, tasks] = await Promise.all([
-    ctx.email.search('is:unread'),
-    ctx.calendar.search({ from: new Date(), to: new Date(Date.now() + 24 * 60 * 60 * 1000) }),
-    searchTasks(ctx.userId, { status: 'open' }),
-  ]);
-
-  // generateObject (schema-validated) instead of generateText + JSON.parse:
-  // raw-text JSON parsing was fragile against markdown code fences, leading
-  // prose, or truncation, and a parse failure inside step.run would trigger
-  // Inngest's retry logic (burning duplicate Claude API calls) before
-  // ultimately failing silently.
-  const result = await generateObject({
-    model: anthropic('claude-sonnet-5'),
-    schema: briefingSchema,
-    prompt: `Given these unread emails: ${JSON.stringify(emails)}, today's calendar: ${JSON.stringify(events)}, and open tasks: ${JSON.stringify(tasks)}, generate attentionItems (what genuinely needs action today, max 5) and digestItems (a short "things to know" summary, max 5).`,
-  });
-
-  return result.object;
+export function defaultJobDeps(): JobDeps {
+  return {
+    now: () => new Date(),
+    model: getBriefingModel,
+    modelId: briefingModelId(),
+    logger: logger.child({ job: 'briefing' }),
+    embed: process.env.VOYAGE_API_KEY ? embed : null,
+    google: {
+      getAccessToken: (userId, opts) => getFreshAccessToken(userId, opts),
+      gmail: (token, opts) => createGmailCapability(token, opts),
+      calendar: (token, opts) => createCalendarCapability(token, opts),
+    },
+  };
 }
 
-/**
- * Loads the distinct set of userIds with a linked integration account.
- * Deliberately returns bare userIds, never whole `integration_accounts`
- * rows: this is the return value of the `load-accounts` Inngest step below,
- * and Inngest persists a step's return value in its own durable/cloud state
- * (and shows it in the run inspector UI) - access_token/refresh_token must
- * never end up there.
- */
-export async function loadAccountUserIds(): Promise<string[]> {
-  const { db } = await import('@/db/client');
-  const { integrationAccounts } = await import('@/db/schema');
-  const rows = await db.select({ userId: integrationAccounts.userId }).from(integrationAccounts);
-  return [...new Set(rows.map((row) => row.userId))];
+interface InngestStep {
+  run: (id: string, fn: () => Promise<unknown>) => Promise<unknown>;
+  sendEvent: (id: string, events: BriefingEventPayload[]) => Promise<unknown>;
 }
 
-/**
- * Generates and persists one user's daily briefing. Fetches its own fresh
- * Google access token internally (via getFreshAccessToken) rather than
- * accepting one as a parameter, so no token ever needs to flow through -
- * and get memoized by - the outer Inngest step's return value.
- */
-export async function generateAndSaveBriefing(userId: string): Promise<void> {
-  const { db } = await import('@/db/client');
-  const { dailyBriefings } = await import('@/db/schema');
-  const { createGmailCapability } = await import('@/lib/integrations/gmail/client');
-  const { createCalendarCapability } = await import('@/lib/integrations/calendar/client');
-  const { getFreshAccessToken } = await import('@/lib/integrations/google/refresh-token');
-
-  const accessToken = await getFreshAccessToken(userId);
-  const briefing = await generateBriefing({
-    userId,
-    email: createGmailCapability(accessToken),
-    calendar: createCalendarCapability(accessToken),
-  });
-  await db.insert(dailyBriefings).values({
-    userId,
-    briefingDate: new Date().toISOString().slice(0, 10),
-    attentionItems: briefing.attentionItems,
-    digestItems: briefing.digestItems,
-  });
+/** Inngest's step tools, narrowed to the StepLike seam (step outputs are JSON-safe by construction). */
+export function adaptStep(step: unknown): StepLike {
+  const s = step as InngestStep;
+  return {
+    run: <T>(id: string, fn: () => Promise<T>) => s.run(id, fn) as Promise<T>,
+    sendEvent: (id, events) => s.sendEvent(id, events),
+  };
 }
 
-export const dailyBriefingFn = inngest.createFunction(
-  { id: 'daily-briefing', retries: 3, triggers: { cron: '0 8 * * *' } },
-  async ({ step }) => {
-    // V1: iterate integration_accounts directly; a per-user fan-out event is a
-    // straightforward Phase 2 change once user volume justifies it.
-    const userIds = await step.run('load-accounts', loadAccountUserIds);
-
-    // One user's failure (e.g. a revoked refresh token) must not take down
-    // everyone else's briefing: without this try/catch, a thrown step.run
-    // retries 3x and then fails the whole function, so every user later in
-    // the loop gets no briefing that day - not just the one with the bad
-    // token. Log and move on to the next user instead.
-    for (const userId of userIds) {
-      try {
-        await step.run(`briefing-${userId}`, () => generateAndSaveBriefing(userId));
-      } catch (err) {
-        console.error(`[daily-briefing] failed to generate briefing for user ${userId}:`, err);
-      }
-    }
+export const briefingSchedulerFn = inngest.createFunction(
+  {
+    id: 'briefing-scheduler',
+    name: 'Briefing scheduler',
+    retries: 1,
+    concurrency: { limit: 1 },
+    triggers: [{ cron: '*/15 * * * *' }],
   },
+  async ({ step }) => runSchedulerTick(adaptStep(step), defaultJobDeps()),
 );
+
+export const briefingGenerateFn = inngest.createFunction(
+  {
+    id: 'briefing-generate',
+    name: 'Briefing generate (per user)',
+    retries: GENERATE_RETRIES,
+    concurrency: { key: 'event.data.userId', limit: 1 },
+    idempotency: 'event.data.dedupeKey',
+    triggers: [{ event: BRIEFING_EVENT }],
+    onFailure: async ({ event, error }) => {
+      const original = (event as { data?: { event?: { data?: unknown } } }).data?.event?.data;
+      await handleBriefingFailure(original, error, defaultJobDeps());
+    },
+  },
+  async ({ event, step, runId, attempt, maxAttempts }) =>
+    runBriefingGenerate(
+      { eventData: event.data, runId, attempt, maxAttempts: maxAttempts ?? GENERATE_RETRIES + 1 },
+      adaptStep(step),
+      defaultJobDeps(),
+    ),
+);
+
+export const briefingFunctions = [briefingSchedulerFn, briefingGenerateFn];
