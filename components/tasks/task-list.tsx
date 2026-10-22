@@ -74,7 +74,7 @@ export function TaskList({ items, today, label, grouped = false, empty, projects
     });
   }, [byId]);
 
-  const open = useCallback((id: string, field?: string) => (onOpen ? onOpen(id, field) : app?.openTask(id)), [onOpen, app]);
+  const open = useCallback((id: string, field?: string) => (onOpen ? onOpen(id, field) : app?.openTask(id, field)), [onOpen, app]);
 
   const focusRow = (id: string | undefined) => {
     if (!id) return;

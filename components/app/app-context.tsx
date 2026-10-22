@@ -21,7 +21,7 @@ export interface AppSession {
 interface AppContextValue extends AppSession {
   shortcutsEnabled: boolean;
   setShortcutsEnabled: (v: boolean) => void;
-  openTask: (id: string) => void;
+  openTask: (id: string, field?: string) => void;
   closeTask: () => void;
   /** The task row the user has focused/selected: the antecedent for "it" (docs/04 §8.2). */
   focusedTaskRef: React.RefObject<string | null>;
@@ -38,9 +38,11 @@ export function AppProvider({ session, children }: { session: AppSession; childr
   const focusedTaskRef = useRef<string | null>(null);
 
   const openTask = useCallback(
-    (id: string) => {
+    (id: string, field?: string) => {
       const next = new URLSearchParams(params.toString());
       next.set('task', id);
+      if (field) next.set('field', field);
+      else next.delete('field');
       router.push(`${pathname}?${next}`, { scroll: false });
     },
     [params, pathname, router],
@@ -48,6 +50,7 @@ export function AppProvider({ session, children }: { session: AppSession; childr
   const closeTask = useCallback(() => {
     const next = new URLSearchParams(params.toString());
     next.delete('task');
+    next.delete('field');
     const q = next.toString();
     router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
   }, [params, pathname, router]);
