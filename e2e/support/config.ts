@@ -26,6 +26,8 @@ export function serverEnv(): Record<string, string> {
     // Page-load enqueues go to the local sink in e2e/support/https-proxy.mjs.
     INNGEST_BASE_URL: `http://127.0.0.1:${INNGEST_SINK_PORT}`,
     RATE_LIMIT_ALLOW_MEMORY: '1',
+    // Seeded users get distinct x-real-ip values; the local proxy is trusted.
+    TRUST_PROXY_IP_HEADERS: '1',
     EMAIL_TRANSPORT: 'memory',
     E2E_SCRIPTED_MODEL: '1',
     E2E_ALLOW_SCRIPTED_MODEL: SCRIPTED_MODEL_ACK,

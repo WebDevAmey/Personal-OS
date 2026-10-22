@@ -1,15 +1,27 @@
 // lib/security/request-meta.ts
 // Edge-safe helpers that read client metadata from a Request.
 //
-// Trust assumption: the app runs behind Vercel's edge, which overwrites
-// `x-real-ip` and `x-forwarded-for` with the connecting client's address, so a
-// client cannot choose its own rate-limit key. Behind any other proxy, make
-// sure it does the same before relying on per-IP limits.
+// Trust: `x-real-ip` and `x-forwarded-for` are client-settable unless a proxy
+// overwrites them. Vercel's edge does (VERCEL=1), and so may a self-hosted
+// proxy the operator declares with TRUST_PROXY_IP_HEADERS=1. A production
+// server without either uses only the rightmost `x-forwarded-for` entry, the
+// one appended by the nearest proxy, so a client cannot rotate its own
+// rate-limit key (SEC-R-013). Dev and test keep the simple behaviour.
 
-export function clientIp(req: Request): string {
+type Env = Record<string, string | undefined>;
+
+export function trustsClientIpHeaders(env: Env = process.env): boolean {
+  return env.VERCEL === '1' || env.TRUST_PROXY_IP_HEADERS === '1' || env.NODE_ENV !== 'production';
+}
+
+export function clientIp(req: Request, env: Env = process.env): string {
+  const forwarded = req.headers.get('x-forwarded-for');
+  if (!trustsClientIpHeaders(env)) {
+    const last = forwarded?.split(',').at(-1)?.trim();
+    return last ? last.slice(0, 64) : 'unknown';
+  }
   const real = req.headers.get('x-real-ip')?.trim();
   if (real) return real.slice(0, 64);
-  const forwarded = req.headers.get('x-forwarded-for');
   const first = forwarded?.split(',')[0]?.trim();
   if (first) return first.slice(0, 64);
   return 'unknown';
