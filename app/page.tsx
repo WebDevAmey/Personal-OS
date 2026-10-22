@@ -7,10 +7,10 @@ import { Faq } from "@/components/landing/faq";
 import { Features } from "@/components/landing/features";
 import { Hero } from "@/components/landing/hero";
 import { HowItWorks } from "@/components/landing/how-it-works";
-import { MotionRoot, Reveal } from "@/components/landing/motion";
+import { Reveal } from "@/components/landing/motion";
 import { Nav } from "@/components/landing/nav";
 import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cx as cn } from "@/components/ui/class-names";
 
 export const metadata: Metadata = {
   title: "Personal OS — your day, managed by one command",
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 
 export default function Home() {
   return (
-    <MotionRoot>
+    <>
       {/* Without JavaScript the reveals never run, so show their content. */}
       <noscript>
         <style>{"[data-reveal]{opacity:1!important;transform:none!important}"}</style>
@@ -45,13 +45,13 @@ export default function Home() {
               </h2>
               <p className="mt-3 text-body-lg text-muted-foreground">Connect Google tonight and your first briefing is ready at 06:30.</p>
             </div>
-            <Link href="/sign-up" className={cn(buttonVariants({ size: "lg" }), "h-10 px-4 text-body")}>
+            <Link href="/sign-up" className={cn(buttonVariants({ size: "lg" }), "h-10 px-4")}>
               Get started
             </Link>
           </Reveal>
         </section>
       </main>
       <Footer />
-    </MotionRoot>
+    </>
   );
 }

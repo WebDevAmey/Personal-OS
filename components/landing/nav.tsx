@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cx as cn } from "@/components/ui/class-names";
 import { Brand } from "./brand";
 
 const LINKS = [
@@ -24,10 +24,10 @@ export function Nav() {
           ))}
         </ul>
         <div className="flex items-center gap-2 sm:gap-3">
-          <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "lg" }), "px-3 text-body")}>
+          <Link href="/sign-in" className={cn(buttonVariants({ variant: "ghost", size: "lg" }), "px-3")}>
             Sign in
           </Link>
-          <Link href="/sign-up" className={cn(buttonVariants({ size: "lg" }), "px-3 text-body")}>
+          <Link href="/sign-up" className={cn(buttonVariants({ size: "lg" }), "px-3")}>
             Get started
           </Link>
         </div>

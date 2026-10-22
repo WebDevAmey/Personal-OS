@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cx as cn } from "@/components/ui/class-names";
 import { SorterFigure } from "./figures/sorter/figure";
 
 export function Hero() {
@@ -17,11 +17,11 @@ export function Hero() {
           command handles the rest, with Undo on every change.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          <Link href="/sign-up" className={cn(buttonVariants({ size: "lg" }), "h-10 px-4 text-body")}>
+          <Link href="/sign-up" className={cn(buttonVariants({ size: "lg" }), "h-10 px-4")}>
             Get started
             <ArrowRight data-icon="inline-end" aria-hidden="true" />
           </Link>
-          <Link href="/sign-in" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "h-10 px-4 text-body")}>
+          <Link href="/sign-in" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "h-10 px-4")}>
             Sign in
           </Link>
         </div>

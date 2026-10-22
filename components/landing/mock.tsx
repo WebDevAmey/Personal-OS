@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import { cx as cn } from "@/components/ui/class-names";
 
 /* Small pieces of the real app, drawn with the app's tokens, for the
    feature previews. They are illustrations: aria-hidden is set by the caller

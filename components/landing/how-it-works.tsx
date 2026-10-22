@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import { cx as cn } from "@/components/ui/class-names";
 import { GuardFigure } from "./figures/guard/figure";
 import { StampFigure } from "./figures/stamp/figure";
 import { Reveal } from "./motion";

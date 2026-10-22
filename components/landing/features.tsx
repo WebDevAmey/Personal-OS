@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Bookmark, CalendarDays, Check, FileText, ListTodo, Mail, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { cx as cn } from "@/components/ui/class-names";
 import { CommandDemo, SENTENCE } from "./command-demo";
 import { Kbd, Panel, SourceChip, Token } from "./mock";
 import { Reveal } from "./motion";
