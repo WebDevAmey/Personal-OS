@@ -6,8 +6,8 @@ recorded as passing.
 ## Current state
 
 - **Branch:** `personal-os-v1`
-- **Milestone:** M0 complete → M1 in progress
-- **Next task:** ARCH-002 + TASK-001 (final Prisma schema and migration)
+- **Milestone:** M0–M4 core merged; M5 (AI), M6 (briefing), M7/M8 (UI, voice) in progress in parallel
+- **Next task:** integrate AI command engine, briefing and app UI; then AUTH-010 (remove Drizzle/Auth.js)
 
 ## Verification baseline (2026-10-21)
 
@@ -18,9 +18,22 @@ recorded as passing.
 | Unit/integration (no DB) | `pnpm test` | 31/37 files, 140/141 tests; failures need DATABASE_URL / NEXT_PUBLIC_APP_URL |
 | Unit/integration (local Postgres 16 + pgvector, after ADR-003) | `pnpm test` | 35/37 files, 165/176 tests; the 11 failures are the Drizzle-backed `lib/tasks/queries.test.ts` and `lib/memory/queries.test.ts`, which use the Neon HTTP driver directly (scheduled for TASK-002 / MEM-001) |
 | Prisma migrations on empty DB | `prisma migrate deploy` | pass (2 migrations) |
-| Build | `pnpm build` | not yet run |
+| Build (dummy env, after Next 15.5.28 upgrade) | `pnpm build` | pass |
+| Full suite after merging data foundation, auth hardening, integrations (2026-10-22) | `pnpm test` | 68/68 files, 630/630 tests |
+| Typecheck / lint (same state) | `pnpm typecheck`, `pnpm lint` | pass; 0 errors, 22 warnings (ARCH-001 import-boundary warnings on not-yet-ported Drizzle/Auth.js consumers) |
+| Migrations | `prisma migrate deploy` + migration test | 12 migrations apply; data-preserving mapping test passes |
+| Task view performance (10k tasks) | TASK-010 test | Today median 6.8 ms, Upcoming 7.1 ms, index scan confirmed |
+| Dependency audit | `pnpm audit --prod` | 2 high remaining (`mysql2` via drizzle-orm, removed in AUTH-010; `deepmerge-ts` via prisma config, dev-time) |
 
 ## Log
+
+### 2026-10-22
+
+- Pushed to `WebDevAmey/Personal-OS` (repo was empty; normal first push).
+- Merged integrations hardening (INT-001..006): bounded Gmail search, plain-text bodies flagged untrusted, draft-only Gmail, read-only Calendar with TZ ranges, encrypted token reads, revocation, untrusted-content wrapper. 143 tests.
+- Merged auth hardening (AUTH-002..008): DB-backed auth rate limiting, AuthEvents, CSRF guard, CSP/HSTS, deny-by-default middleware, lockout race fix, sign-up pre-hijack fix, reset caps, logout + revoke-all, PKCE + Google JWKS id_token check, token encryption on write, passkey challenge binding, safe callbackUrl. 13 findings fixed pending independent review, 6 partially.
+- Merged data foundation (ARCH-001/002, TASK-001..010, MEM-001/002): final schema, 10 data-preserving migrations, ownership-safe task/project/preference/memory repositories, recurrence, undo, bulk preview/apply, import-boundary lint rule.
+- Lead fix: passkey counter BigInt handling.
 
 ### 2026-10-21
 
