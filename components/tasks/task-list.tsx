@@ -248,7 +248,7 @@ export function TaskList({ items, today, label, grouped = false, empty, projects
   }
 
   return (
-    <div ref={listRef} onKeyDown={onKeyDown} className="flex flex-col gap-4">
+    <div ref={listRef} onKeyDown={onKeyDown} className="group/list flex flex-col gap-4">
       {selected.size > 0 && (
         <BulkBar
           count={selected.size}
@@ -298,7 +298,7 @@ export function TaskList({ items, today, label, grouped = false, empty, projects
           </section>
         );
       })}
-      <p className="px-2 text-meta text-subtle-foreground">
+      <p className="hidden px-2 text-meta text-subtle-foreground md:block">
         <span className="sr-only">Keyboard: </span>J/K to move · X to select · E to complete · Enter to open
       </p>
       {confirm && (

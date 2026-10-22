@@ -5,7 +5,6 @@ import { ArrowLeft, Folder } from 'lucide-react';
 import { getProject } from '@/lib/projects/repo';
 import { isRepoError } from '@/lib/db/errors';
 import { EmptyState } from '@/components/app/page-header';
-import { NewTaskButton } from '@/components/app/new-task-button';
 import { parseId } from '@/app/api/tasks/_lib/http';
 import { pageUser } from '../../_lib/data';
 import { TaskView, type SearchParams } from '../../_lib/task-view';
@@ -47,7 +46,6 @@ export default async function ProjectPage({ params, searchParams }: Props) {
         searchParams={searchParams}
         grouped
         filters={{ sort: true, priority: true, group: true }}
-        actions={<NewTaskButton />}
         empty={
           <EmptyState icon={Folder} title="No tasks in this project">
             Add one with C and type #{project.name.includes(' ') ? `"${project.name}"` : project.name}.

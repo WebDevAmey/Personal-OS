@@ -54,7 +54,7 @@ export const TaskRow = forwardRef<HTMLLIElement, TaskRowProps>(function TaskRow(
         'group/row relative flex min-h-9 items-center gap-2 rounded-md px-2 py-1 outline-none',
         'hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
         selected && 'bg-brand-subtle hover:bg-brand-subtle',
-        active && 'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-brand',
+        active && 'group-focus-within/list:before:absolute group-focus-within/list:before:inset-y-1.5 group-focus-within/list:before:left-0 group-focus-within/list:before:w-0.5 group-focus-within/list:before:rounded-full group-focus-within/list:before:bg-brand',
       )}
     >
       <input

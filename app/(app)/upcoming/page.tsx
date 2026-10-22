@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { CalendarDays } from 'lucide-react';
 import { EmptyState } from '@/components/app/page-header';
-import { NewTaskButton } from '@/components/app/new-task-button';
 import { TaskView, type SearchParams } from '../_lib/task-view';
 
 export const metadata: Metadata = { title: 'Upcoming' };
@@ -14,7 +13,6 @@ export default function UpcomingPage({ searchParams }: { searchParams: SearchPar
       searchParams={searchParams}
       grouped
       filters={{ priority: true, project: true, group: true }}
-      actions={<NewTaskButton />}
       empty={
         <EmptyState icon={CalendarDays} title="Nothing scheduled ahead">
           Tasks due after today appear here by day for the next two weeks, then under Later.

@@ -71,7 +71,7 @@ export default async function TodayPage() {
 
   return (
     <PageContainer wide>
-      <PageHeader title={greeting(parts.hour)} description={dateLabel} actions={<NewTaskButton />} />
+      <PageHeader title={greeting(parts.hour)} description={dateLabel} />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_var(--rail-w)]">
         <div className="flex min-w-0 flex-col gap-6">
           <BriefingPanel result={briefing} today={clock.today} google={google.state} taskStates={taskStates} />

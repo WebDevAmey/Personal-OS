@@ -239,7 +239,7 @@ function Banner({
 function ConnectGoogleCard() {
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-md border border-dashed border-border-strong px-3 py-3">
-      <div className="flex -space-x-1" aria-hidden>
+      <div className="hidden -space-x-1 sm:flex" aria-hidden>
         <span className="grid size-7 place-items-center rounded-full border border-border bg-background">
           <Mail className="size-3.5 text-subtle-foreground" />
         </span>
@@ -476,7 +476,7 @@ function BriefingRow({
           {!done &&
             !gone &&
             current?.due &&
-            current.due.date !== today &&
+            current.due.date > today &&
             item.kind === "task" && (
               <span className="text-meta text-subtle-foreground">
                 Moved to {dueText(current.due, today)}

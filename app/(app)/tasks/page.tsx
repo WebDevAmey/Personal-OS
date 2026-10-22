@@ -14,7 +14,6 @@ export default function AllTasksPage({ searchParams }: { searchParams: SearchPar
       searchParams={searchParams}
       openByDefault
       filters={{ sort: true, status: true, priority: true, project: true }}
-      actions={<NewTaskButton />}
       empty={
         <EmptyState icon={ListChecks} title="No tasks match" action={<NewTaskButton variant="primary" label="Add a task" />}>
           Press <kbd className="font-mono">C</kbd> to add one, or clear the filters above.
