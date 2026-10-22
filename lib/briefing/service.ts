@@ -37,7 +37,8 @@ export interface JobDeps extends GatherDeps {
 
 export const SCHEDULER_PAGE_SIZE = 500;
 export const SEND_CHUNK = 100;
-export const STALE_PENDING_MS = 10 * 60_000;
+// Longer than one tick, so a run waiting in the queue is not re-emitted by the next tick.
+export const STALE_PENDING_MS = 20 * 60_000;
 export const STUCK_RUNNING_MS = 30 * 60_000;
 export const GENERATE_RETRIES = 3;
 
@@ -66,7 +67,7 @@ export async function createDueRuns(now: Date, opts: { pageSize?: number } = {})
       if (r.due) due.push({ userId: p.userId, localDate: r.localDate, timeZone: safeZone(p.timeZone), trigger: 'SCHEDULED' });
     }
     const existing = await existingRunKeys(due);
-    created.push(...(await createPendingRuns(due.filter((d) => !existing.has(`${d.userId}|${d.localDate}`)))));
+    created.push(...(await createPendingRuns(due.filter((d) => !existing.has(`${d.userId}|${d.localDate}`)), { now })));
     if (page.length < (opts.pageSize ?? SCHEDULER_PAGE_SIZE)) break;
   }
   return created;
@@ -81,9 +82,10 @@ export interface SchedulerResult {
 export async function runSchedulerTick(step: StepLike, deps: Pick<JobDeps, 'now' | 'logger'>): Promise<SchedulerResult> {
   const nowIso = await step.run('clock', async () => deps.now().toISOString());
   const now = new Date(nowIso);
-  const fresh = await step.run('find-due', () => createDueRuns(now));
+  // Sweeps first, so runs created by this tick are never also re-emitted by it.
   const failedStuck = await step.run('fail-stuck', () => failStuckRuns(new Date(now.getTime() - STUCK_RUNNING_MS), now));
   const stale = await step.run('stale-pending', () => claimStalePendingRuns(new Date(now.getTime() - STALE_PENDING_MS), now));
+  const fresh = await step.run('find-due', () => createDueRuns(now));
 
   const events = [
     ...fresh.map((r) => briefingEvent(r.userId, r.localDate, { trigger: 'SCHEDULED' })),

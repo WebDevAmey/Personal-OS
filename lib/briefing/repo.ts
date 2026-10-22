@@ -56,12 +56,13 @@ export interface PendingRunInput {
  * the rows this call created, so the caller emits exactly one event per
  * new run even when called concurrently.
  */
-export async function createPendingRuns(rows: PendingRunInput[], opts: { tx?: Tx } = {}): Promise<{ userId: string; localDate: LocalDate }[]> {
+export async function createPendingRuns(rows: PendingRunInput[], opts: { tx?: Tx; now?: Date } = {}): Promise<{ userId: string; localDate: LocalDate }[]> {
   if (rows.length === 0) return [];
+  const now = opts.now ?? new Date();
   const created = await reader(opts.tx).$queryRaw<{ userId: string; localDate: Date }[]>(Prisma.sql`
     INSERT INTO "BriefingRun" ("id", "userId", "localDate", "timeZone", "status", "trigger", "requestId", "createdAt", "updatedAt")
     SELECT 'brf_' || replace(gen_random_uuid()::text, '-', ''), t."userId", t."localDate"::date, t."timeZone",
-           'PENDING'::"BriefingRunStatus", t."trigger"::"BriefingTrigger", t."requestId", now(), now()
+           'PENDING'::"BriefingRunStatus", t."trigger"::"BriefingTrigger", t."requestId", ${now}, ${now}
     FROM unnest(
       ${rows.map((r) => r.userId)}::text[],
       ${rows.map((r) => r.localDate)}::text[],
@@ -116,7 +117,7 @@ export async function claimRun(input: ClaimInput, opts: { tx?: Tx } = {}): Promi
   const db = reader(opts.tx);
   const localDate = floatingDate(input.localDate);
   // A run requested outside the scheduler/page paths (e.g. the Inngest dashboard) has no row yet.
-  await createPendingRuns([{ userId: input.userId, localDate: input.localDate, timeZone: input.timeZone, trigger: input.trigger, requestId: input.requestId }], opts);
+  await createPendingRuns([{ userId: input.userId, localDate: input.localDate, timeZone: input.timeZone, trigger: input.trigger, requestId: input.requestId }], { ...opts, now: input.now });
 
   const own = await db.briefingRun.updateMany({
     where: { userId: input.userId, localDate, status: 'RUNNING', inngestRunId: input.inngestRunId },
