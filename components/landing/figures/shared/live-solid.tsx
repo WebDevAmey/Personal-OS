@@ -30,7 +30,7 @@ export function LiveSolid({
 }) {
   const p = paths ?? EMPTY;
   return (
-    <g data-k={name} className={className ? `iso-solid ${className}` : "iso-solid"} data-lit={lit ? "" : undefined}>
+    <g data-k={name} className={className ? `iso-solid ${className}` : "iso-solid"} data-lit={lit ? "" : undefined} data-seamless={p.seamless ? "" : undefined}>
       <path data-p="fill" className="iso-fill" d={p.fill} />
       {[0, 1, 2, 3].map((shade) => (
         <path key={shade} data-p={`shade${shade}`} className="iso-shade" data-shade={shade} d={p.shades[shade] ?? ""} />

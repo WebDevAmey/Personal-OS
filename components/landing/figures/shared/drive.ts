@@ -21,6 +21,19 @@ export interface Driver {
   render: (t: number) => void;
   /* Seconds to hold the finished state before the tour loops. */
   hold?: number;
+  /* false: the pointer does not scrub; the figure wires its own input. */
+  scrub?: boolean;
+  /* Extra input for the figure, given a handle on the clock. */
+  attach?: (control: Control) => () => void;
+}
+
+export interface Control {
+  /* ease toward a time (instant under reduced motion) */
+  input: (t: number) => void;
+  /* jump to a time that looks the same as the current one */
+  jump: (t: number) => void;
+  /* where the clock is heading */
+  target: () => number;
 }
 
 const TOUR_AFTER = 1.4;
@@ -117,7 +130,14 @@ export function drive(stage: HTMLDivElement, driver: Driver): () => void {
     schedule();
   };
 
+  const jump = (next: number) => {
+    t = target = next;
+    draw();
+  };
+  const detach = driver.attach?.({ input, jump, target: () => (mode === "scrub" ? target : t) });
+
   const onPointer = (event: PointerEvent) => {
+    if (driver.scrub === false) return;
     if (event.pointerType === "touch" && event.type === "pointermove" && !event.buttons) return;
     const box = stage.getBoundingClientRect();
     if (!box.width) return;
@@ -166,6 +186,7 @@ export function drive(stage: HTMLDivElement, driver: Driver): () => void {
   schedule();
 
   return () => {
+    detach?.();
     halt();
     observer.disconnect();
     stage.removeEventListener("pointermove", onPointer);

@@ -25,7 +25,7 @@ const STILL = "(prefers-reduced-motion: reduce)";
 
 type AriaProps = Pick<
   React.HTMLAttributes<HTMLDivElement>,
-  "role" | "aria-label" | "aria-valuemin" | "aria-valuemax" | "aria-valuenow" | "aria-valuetext" | "aria-pressed" | "aria-describedby"
+  "role" | "aria-label" | "aria-valuemin" | "aria-valuemax" | "aria-valuenow" | "aria-valuetext" | "aria-checked" | "aria-describedby"
 >;
 
 export function FigureStage({ kind, children, ...aria }: AriaProps & { kind: FigureKind; children: React.ReactNode }) {
@@ -58,6 +58,21 @@ export function FigureStage({ kind, children, ...aria }: AriaProps & { kind: Fig
     observer.observe(node);
     return () => observer.disconnect();
   }, [load]);
+
+  /* The readout speaks only while the figure has focus. */
+  React.useEffect(() => {
+    const node = root.current;
+    const readout = node?.closest(".iso-plate")?.querySelector("[data-readout]");
+    if (!node || !readout) return;
+    const on = () => readout.setAttribute("aria-live", "polite");
+    const off = () => readout.removeAttribute("aria-live");
+    node.addEventListener("focus", on);
+    node.addEventListener("blur", off);
+    return () => {
+      node.removeEventListener("focus", on);
+      node.removeEventListener("blur", off);
+    };
+  }, []);
 
   const Live = LIVE[kind];
   return (
