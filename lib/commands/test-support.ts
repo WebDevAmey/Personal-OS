@@ -107,7 +107,7 @@ export function fakeGoogle(data: FakeGmailData & { events?: NormalizedEvent[]; f
   const gmail: GmailLike = {
     async search(query) {
       calls.search.push(query);
-      return messages.map(({ body: _b, to: _t, ...m }) => ({ ...m, untrusted: true as const }));
+      return messages.map((m) => ({ id: m.id, from: m.from, subject: m.subject, snippet: m.snippet, receivedAt: m.receivedAt, threadId: m.threadId, untrusted: true as const }));
     },
     async get(id) {
       calls.get.push(id);

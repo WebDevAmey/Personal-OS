@@ -27,7 +27,7 @@ export function cleanReference(reference: string): string {
 }
 
 /** "the thing I need to finish today", "what's due today" → the open tasks due today (docs/00 E12). */
-const DUE_TODAY = /^(?:(?:thing|stuff|one|item|task)s?\b.*\btoday|(?:what(?:'s| is)? )?due today|today(?:'s)? tasks?)$/;
+const DUE_TODAY = /^(?:(?:thing|stuff|one|item|task)s?\b.*\btoday|(?:what(?:'s| is)? )?due today|today'?s? tasks?)$/;
 
 export function isDueTodayDescription(reference: string): boolean {
   return DUE_TODAY.test(cleanReference(reference));

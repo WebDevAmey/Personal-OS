@@ -339,11 +339,11 @@ export async function handleConfirm(userId: string, body: unknown, deps: Command
 // ───────────────────────── undo (§9.3) ─────────────────────────
 
 /** Undo of an executed command action, by the taskEventId/batchId the response carried. */
-export async function handleUndo(userId: string, body: unknown, meta: CommandMeta = {}): Promise<CommandResponse> {
+export async function handleUndo(userId: string, body: unknown, deps: Pick<CommandDeps, 'now'>, meta: CommandMeta = {}): Promise<CommandResponse> {
   const parsed = UndoRequest.safeParse(body);
   if (!parsed.success) return errorBody('INVALID_INPUT');
   const { taskEventId, batchId } = parsed.data;
-  const ctx = { source: 'COMMAND' as const, actorType: 'USER' as const, requestId: meta.requestId };
+  const ctx = { source: 'COMMAND' as const, actorType: 'USER' as const, requestId: meta.requestId, now: deps.now() };
   try {
     const r = taskEventId ? await undoEvent(userId, taskEventId, ctx) : await undoBatch(userId, batchId!, ctx);
     const n = r.tasks.length;

@@ -30,7 +30,7 @@ describe('rescheduling', () => {
     ], { final: 'Moved Q3 report to Thu 22 Oct.' });
     const res = expectKind(await r.go(), 'executed');
     expect(res.actions).toHaveLength(1);
-    expect(res.actions[0].undo.taskEventId).toBeTruthy();
+    expect(res.actions[0].undo?.taskEventId).toBeTruthy();
     const after = await prisma.task.findUniqueOrThrow({ where: { id: t.id } });
     expect(after.dueAt?.toISOString()).toBe('2026-10-22T00:00:00.000Z');
     expect(await prisma.taskEvent.count({ where: { taskId: t.id } })).toBe(1);
