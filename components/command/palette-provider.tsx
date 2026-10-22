@@ -5,7 +5,7 @@
 // (FR-401, AC-408).
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { confirmProposal, newClientRequestId, sendCommand, type CommandResponse, type ExecutedAction } from './api';
+import { confirmProposal, newClientRequestId, sendCommand, undoCommand, type CommandResponse, type ExecutedAction } from './api';
 import { commandRequestFor, initialPaletteState, paletteReducer, type LastRequest, type PaletteState } from './state';
 import { spokenSummary } from './speech';
 import { notify } from '@/components/app/toast';
@@ -84,14 +84,14 @@ export function PaletteProvider({ children }: { children: React.ReactNode }) {
   const undoAction = useCallback(
     async (action: ExecutedAction) => {
       if (!action.undo) return;
-      try {
-        await tasksApi.undo({ eventId: action.undo.taskEventId });
-        dispatch({ type: 'undone', proposalId: action.proposalId });
-        notify({ title: 'Undone', description: action.summary, tone: 'success' });
-        router.refresh();
-      } catch (e) {
-        notify({ title: "Couldn't undo", description: e instanceof ApiError ? e.message : undefined, tone: 'error' });
+      const r = await undoCommand(action.undo);
+      if (r.kind === 'error') {
+        notify({ title: "Couldn't undo", description: r.error.message, tone: 'error' });
+        return;
       }
+      dispatch({ type: 'undone', proposalId: action.proposalId });
+      notify({ title: 'message' in r ? r.message : 'Undone', tone: 'success' });
+      router.refresh();
     },
     [router],
   );

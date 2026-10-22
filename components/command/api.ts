@@ -1,30 +1,38 @@
-// components/command/api.ts — typed client for the command pipeline,
-// mirroring docs/04 §9 exactly (POST /api/command, POST /api/command/confirm).
+// components/command/api.ts — typed client for the command pipeline on the
+// shared contract in lib/commands/types.ts (docs/04 §9): POST /api/command,
+// /api/command/confirm, /api/command/cancel and /api/command/undo.
 //
 // Idempotency (docs/04 §11.1): one clientRequestId per submission, reused for
 // automatic retries of that same submission (network failure, 5xx marked
 // retryable, 409 REQUEST_IN_PROGRESS after retryAfterMs). A new submission —
 // including answering a clarification — gets a new id.
+import type {
+  AnswerSource,
+  ClarificationOption,
+  CommandResponse as ServerCommandResponse,
+  ConfirmReason,
+  DiffLine,
+  ErrorCode as ServerErrorCode,
+  ExecutedAction,
+  ProposalView,
+  Risk,
+} from '@/lib/commands/types';
 
-export type Risk = 'READ' | 'REVERSIBLE' | 'CONSEQUENTIAL' | 'DESTRUCTIVE' | 'BULK' | 'EXTERNAL';
+export type { AnswerSource, ClarificationOption, ExecutedAction, Risk };
+export type Proposal = ProposalView;
+export type ProposalDiff = DiffLine;
+export type ProposalReason = ConfirmReason;
 
-export type ErrorCode =
-  | 'INVALID_INPUT'
-  | 'INPUT_TOO_LONG'
-  | 'UNAUTHENTICATED'
-  | 'RATE_LIMITED'
-  | 'REQUEST_IN_PROGRESS'
-  | 'PROPOSAL_NOT_FOUND'
-  | 'PROPOSAL_EXPIRED'
-  | 'CONFLICT'
-  | 'POLICY_REJECTED'
-  | 'INTEGRATION_RECONNECT_REQUIRED'
-  | 'PROVIDER_UNAVAILABLE'
-  | 'MODEL_ERROR'
-  | 'STEP_LIMIT'
-  | 'INTERNAL'
-  /** Client-side only: the request never got a response. */
-  | 'NETWORK';
+/** Server codes plus `NETWORK`: the request never got a response. */
+export type ErrorCode = ServerErrorCode | 'NETWORK';
+
+export type CommandError = {
+  kind: 'error';
+  runId?: string;
+  error: { code: ErrorCode; message: string; retryable: boolean; retryAfterMs?: number };
+  needsReconnect?: true;
+};
+export type CommandResponse = Exclude<ServerCommandResponse, { kind: 'error' }> | CommandError;
 
 export interface CommandRequest {
   clientRequestId: string;
@@ -34,59 +42,10 @@ export interface CommandRequest {
   context?: { focusedTaskId?: string; page?: 'today' | 'tasks' | 'other'; previousRunId?: string };
 }
 
-export interface AnswerSource {
-  type: 'task' | 'event' | 'email' | 'memory' | 'web';
-  label: string;
-  href?: string;
-}
-
-export interface ClarificationOption {
-  id: string;
-  label: string;
-  detail?: string;
-}
-
-export interface ProposalDiff {
-  entity: string;
-  field: string;
-  before: string | null;
-  after: string | null;
-}
-
-export type ProposalReason = 'destructive' | 'bulk' | 'external' | 'untrusted_source' | 'inferred_value';
-
-export interface Proposal {
-  id: string;
-  tool: string;
-  risk: Risk;
-  summary: string;
-  diff: ProposalDiff[];
-  reasons: ProposalReason[];
-  taintSources?: ('email' | 'calendar' | 'memory' | 'web')[];
-  expiresAt: string;
-}
-
-export interface ExecutedAction {
-  proposalId: string;
-  tool: string;
-  entity: { type: 'task' | 'reminder' | 'memory' | 'email_draft'; id: string };
-  summary: string;
-  undo?: { taskEventId: string };
-}
-
-export type CommandResponse =
-  | { kind: 'answer'; runId: string; message: string; sources?: AnswerSource[] }
-  | { kind: 'clarification'; runId: string; message: string; question: string; options: ClarificationOption[]; allowFreeText: boolean }
-  | { kind: 'proposal'; runId: string; message: string; proposal: Proposal }
-  | { kind: 'executed'; runId: string; message: string; actions: ExecutedAction[] }
-  | { kind: 'error'; runId?: string; error: { code: ErrorCode; message: string; retryable: boolean; retryAfterMs?: number } };
-
 export interface ConfirmRequest {
   proposalId: string;
   decision?: 'confirm' | 'cancel';
 }
-
-export type CommandError = Extract<CommandResponse, { kind: 'error' }>;
 
 const KINDS = new Set(['answer', 'clarification', 'proposal', 'executed', 'error']);
 
@@ -108,6 +67,7 @@ export const ERROR_COPY: Partial<Record<ErrorCode, string>> = {
   NETWORK: "Couldn't reach Personal OS. Check your connection and retry.",
   RATE_LIMITED: "You've hit the command limit — try again in a minute.",
   UNAUTHENTICATED: 'Please sign in again.',
+  INPUT_TOO_LONG: "That's over 2,000 characters — try something shorter.",
   INTERNAL: 'Something went wrong on our side.',
 };
 
@@ -171,7 +131,13 @@ export function sendCommand(req: CommandRequest, opts: SendOptions = {}): Promis
   return post('/api/command', req, opts);
 }
 
-/** POST /api/command/confirm. Idempotent on proposalId (docs/04 §9.2). */
+/** POST /api/command/confirm or /cancel. Idempotent on proposalId (docs/04 §9.2). */
 export function confirmProposal(req: ConfirmRequest, opts: SendOptions = {}): Promise<CommandResponse> {
-  return post('/api/command/confirm', { proposalId: req.proposalId, decision: req.decision ?? 'confirm' }, opts);
+  if (req.decision === 'cancel') return post('/api/command/cancel', { proposalId: req.proposalId }, opts);
+  return post('/api/command/confirm', { proposalId: req.proposalId, decision: 'confirm' }, opts);
+}
+
+/** POST /api/command/undo with an executed action's undo token. */
+export function undoCommand(undo: { taskEventId: string; batchId?: string }, opts: SendOptions = {}): Promise<CommandResponse> {
+  return post('/api/command/undo', undo.batchId ? { batchId: undo.batchId } : { taskEventId: undo.taskEventId }, { ...opts, maxRetries: 0 });
 }
