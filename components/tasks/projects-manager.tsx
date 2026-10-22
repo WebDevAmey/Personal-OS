@@ -11,6 +11,7 @@ import { notify } from '@/components/app/toast';
 import { EmptyState } from '@/components/app/page-header';
 import { ApiError, projectsApi } from './api';
 import { inputCls } from './task-detail';
+import { projectColor } from './format';
 import type { ProjectDTO } from './types';
 
 const iconBtn =
@@ -88,7 +89,7 @@ export function ProjectsManager({ projects, archived }: { projects: ProjectDTO[]
         <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
           {projects.map((p) => (
             <li key={p.id} className="flex items-center gap-3 px-3 py-2">
-              <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ background: p.color ?? 'var(--border-strong)' }} />
+              <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ background: projectColor(p.color) }} />
               {editing === p.id ? (
                 <RenameField project={p} onDone={(n) => (n && n !== p.name ? void update(p, { name: n }, 'rename the project') : setEditing(null))} />
               ) : (

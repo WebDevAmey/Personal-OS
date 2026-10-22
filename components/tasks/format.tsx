@@ -79,3 +79,8 @@ export function groupHeading(group: string, today: string): string {
       return /^\d{4}-\d{2}-\d{2}$/.test(group) ? dayLabel(group, today) : group;
   }
 }
+
+/** Project.color is a design-token name (docs/03), e.g. "brand" or "chart-2". */
+export function projectColor(color: string | null): string {
+  return color && /^[a-z][a-z0-9-]{0,31}$/.test(color) ? `var(--${color}, var(--border-strong))` : 'var(--border-strong)';
+}

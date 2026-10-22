@@ -19,6 +19,7 @@ import { QUICK_CAPTURE_EVENT } from './new-task-button';
 import { PaletteProvider, usePalette } from '@/components/command/palette-provider';
 import { CommandPalette, NAV_ITEMS, START_VOICE_EVENT } from '@/components/command/palette';
 import { TaskSheet } from '@/components/tasks/task-sheet';
+import { projectColor } from '@/components/tasks/format';
 import { QuickCapture } from '@/components/tasks/quick-capture';
 import { getSpeechRecognition } from '@/lib/voice/types';
 import { isEditableTarget, useDocumentKeydown, useIsMac, useOnline } from '@/lib/hooks/use-keyboard';
@@ -252,7 +253,7 @@ function SidebarContent({ counts, pathname }: { counts: NavCounts; pathname: str
                         active && 'bg-surface-2 font-medium text-foreground',
                       )}
                     >
-                      <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: p.color ?? 'var(--border-strong)' }} />
+                      <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: projectColor(p.color) }} />
                       <span className="min-w-0 flex-1 truncate">{p.name}</span>
                       {p.openTaskCount > 0 && <span className="tabular text-meta text-subtle-foreground">{p.openTaskCount}</span>}
                     </Link>
