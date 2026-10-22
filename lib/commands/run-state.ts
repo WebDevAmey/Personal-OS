@@ -102,11 +102,34 @@ export function normaliseForTaint(s: string): string {
   return s.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-/** True when `value` is a verbatim (case/whitespace-normalised) substring of the user's input. */
-export function inUserInput(value: string, input: string): boolean {
+/** Shortest value that can count as the user's own words (SEC-R-004). */
+export const MIN_TAINT_MATCH = 4;
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * True when `normalisedValue` occurs in `normalisedInput` as a whole phrase:
+ * not preceded or followed by a letter or digit.
+ */
+function containsPhrase(normalisedInput: string, normalisedValue: string): boolean {
+  if (normalisedValue.length === 0) return false;
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(normalisedValue)}(?![\\p{L}\\p{N}])`, 'u');
+  return re.test(normalisedInput);
+}
+
+/**
+ * True when `value` appears in the user's input as a whole phrase
+ * (case/whitespace-normalised, word boundaries on both sides) and is at
+ * least MIN_TAINT_MATCH characters long. Empty and very short strings never
+ * count as the user's own words: "it" or "re" match almost any command
+ * (SEC-R-004).
+ */
+export function inUserInput(value: string, input: string, minLength: number = MIN_TAINT_MATCH): boolean {
   const v = normaliseForTaint(value);
-  if (v.length === 0) return true;
-  return normaliseForTaint(input).includes(v);
+  if (v.length === 0 || v.length < minLength) return false;
+  return containsPhrase(normaliseForTaint(input), v);
 }
 
 /** Every string argument (deep) not found in the user's words, skipping handle strings. */

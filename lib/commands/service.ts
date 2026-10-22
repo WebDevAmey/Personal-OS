@@ -26,6 +26,7 @@ import {
   type AgentRun,
 } from './repo';
 import type { RunState } from './run-state';
+import { mentionsAntecedent } from './resolve-task';
 import { summarizeTask } from './summaries';
 import {
   CommandRequest,
@@ -137,7 +138,10 @@ async function buildState(userId: string, run: AgentRun, req: CommandRequest, de
     try {
       const task = await getTask(userId, req.context.focusedTaskId);
       state.focusedTaskId = task.id;
-      const s = await summarizeTask(state, task, { userDerived: true });
+      // The focused task counts as the user's own target only when their words
+      // refer to it ("mark it done"); otherwise a run that reads an email cannot
+      // act on it without confirmation (SEC-R-001).
+      const s = await summarizeTask(state, task, { userDerived: mentionsAntecedent(state.input) });
       focused = { handle: s.handle, title: s.title };
     } catch (e) {
       if (!(e instanceof NotFoundError)) throw e;
