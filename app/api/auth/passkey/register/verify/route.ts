@@ -78,7 +78,7 @@ export async function POST(req: Request) {
         id: credential.id,
         userId: session.userId,
         publicKey: Buffer.from(credential.publicKey),
-        counter: credential.counter,
+        counter: BigInt(credential.counter),
         transports,
         backedUp: credentialBackedUp,
         deviceType: credentialDeviceType,

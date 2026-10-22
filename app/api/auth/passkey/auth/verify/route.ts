@@ -106,7 +106,7 @@ export async function POST(req: Request) {
       credential: {
         id: credential.id,
         publicKey: new Uint8Array(credential.publicKey),
-        counter: credential.counter,
+        counter: Number(credential.counter),
         transports: credential.transports as AuthenticatorTransport[],
       },
     });
@@ -120,7 +120,7 @@ export async function POST(req: Request) {
 
   await prisma.passkeyCredential.update({
     where: { id: credential.id },
-    data: { counter: verification.authenticationInfo.newCounter, lastUsedAt: new Date() },
+    data: { counter: BigInt(verification.authenticationInfo.newCounter), lastUsedAt: new Date() },
   });
 
   const user = await prisma.user.findUnique({ where: { id: credential.userId }, select: { id: true, email: true, sessionVersion: true } });

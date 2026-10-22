@@ -81,7 +81,7 @@ describe('POST /api/auth/passkey/auth/verify (SEC-B-003)', () => {
     expect(res.headers.getSetCookie().find((c) => c.startsWith('pk_chal='))).toMatch(/Max-Age=0/);
 
     const cred = await prisma.passkeyCredential.findUniqueOrThrow({ where: { id: credentialId } });
-    expect(cred.counter).toBe(7);
+    expect(cred.counter).toBe(BigInt(7));
     expect(cred.lastUsedAt).not.toBeNull();
     const id = cookie.split('=')[1];
     expect(await prisma.webAuthnChallenge.findUnique({ where: { id } })).toBeNull();
