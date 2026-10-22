@@ -15,7 +15,6 @@ export function safeCallback(raw: string | null | undefined, fallback: string = 
   if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_LENGTH) return fallback;
   if (!raw.startsWith('/') || raw.startsWith('//')) return fallback;
   if (raw.includes('\\')) return fallback;
-  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f\s]/.test(raw)) return fallback;
   try {
     const url = new URL(raw, BASE);
