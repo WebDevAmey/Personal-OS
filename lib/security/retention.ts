@@ -11,8 +11,7 @@
 //
 // Rows are deleted in batches of RETENTION_BATCH by primary key, each batch
 // its own statement, so a large backlog never holds one long lock.
-import { Prisma } from '@/lib/generated/prisma/client';
-import { prisma } from '@/lib/prisma';
+import { deleteRowsBefore } from './repo';
 
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -33,33 +32,14 @@ export interface RetentionResult {
   verificationTokens: number;
 }
 
-/**
- * Deletes rows of `table` whose `column` is before `cutoff`, batch by batch.
- * `table`, `key` and `column` are compile-time constants from this module,
- * never user input.
- */
-async function purgeBefore(table: string, key: string, column: string, cutoff: Date, batch: number): Promise<number> {
-  const t = Prisma.raw(`"${table}"`);
-  const k = Prisma.raw(`"${key}"`);
-  const c = Prisma.raw(`"${column}"`);
-  let total = 0;
-  for (;;) {
-    const deleted = await prisma.$executeRaw`
-      DELETE FROM ${t} WHERE ${k} IN (
-        SELECT ${k} FROM ${t} WHERE ${c} < ${cutoff} ORDER BY ${k} LIMIT ${batch}
-      )`;
-    total += deleted;
-    if (deleted < batch) return total;
-  }
-}
-
 export async function purgeSecurityTables(opts: { now?: Date; batch?: number } = {}): Promise<RetentionResult> {
   const now = (opts.now ?? new Date()).getTime();
   const batch = opts.batch ?? RETENTION_BATCH;
+  const before = (ms: number) => new Date(now - ms);
   return {
-    rateLimitAttempts: await purgeBefore('RateLimitAttempt', 'key', 'windowStart', new Date(now - RETENTION.rateLimitAttemptMs), batch),
-    authEvents: await purgeBefore('AuthEvent', 'id', 'createdAt', new Date(now - RETENTION.authEventMs), batch),
-    webAuthnChallenges: await purgeBefore('WebAuthnChallenge', 'id', 'expiresAt', new Date(now - RETENTION.webAuthnChallengeGraceMs), batch),
-    verificationTokens: await purgeBefore('VerificationToken', 'id', 'expiresAt', new Date(now - RETENTION.verificationTokenGraceMs), batch),
+    rateLimitAttempts: await deleteRowsBefore('RateLimitAttempt', before(RETENTION.rateLimitAttemptMs), batch),
+    authEvents: await deleteRowsBefore('AuthEvent', before(RETENTION.authEventMs), batch),
+    webAuthnChallenges: await deleteRowsBefore('WebAuthnChallenge', before(RETENTION.webAuthnChallengeGraceMs), batch),
+    verificationTokens: await deleteRowsBefore('VerificationToken', before(RETENTION.verificationTokenGraceMs), batch),
   };
 }
