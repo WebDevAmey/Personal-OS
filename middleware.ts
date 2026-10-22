@@ -48,7 +48,12 @@ const PUBLIC_API_PREFIXES = [
 // never call them, so the Origin check does not apply.
 const CSRF_EXEMPT_PREFIXES = ['/api/inngest'];
 
-const STATIC_FILE = /\.(?:svg|png|jpe?g|gif|webp|avif|ico|webm|mp4|json|txt|xml|woff2?|ttf|css|js|map)$/i;
+// Public static assets (SEC-R-006). Only these known folders and files are
+// exempt; a page path that merely ends in `.js` or `.json` is NOT, so a future
+// dynamic route such as /tasks/[id] cannot be reached past the edge filter
+// with an id like `x.js`.
+const PUBLIC_STATIC_PREFIXES = ['/_next/', '/fonts/', '/images/', '/icons/', '/lottie/'];
+const PUBLIC_STATIC_FILES = new Set(['/favicon.ico', '/robots.txt', '/sitemap.xml', '/manifest.webmanifest', '/apple-touch-icon.png']);
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
   if (prefix.endsWith('/')) return pathname.startsWith(prefix);
@@ -57,10 +62,10 @@ function matchesPrefix(pathname: string, prefix: string): boolean {
 
 export function isPublicPath(pathname: string): boolean {
   if (pathname.startsWith('/api/')) return PUBLIC_API_PREFIXES.some((p) => matchesPrefix(pathname, p));
-  if (PUBLIC_PAGES.has(pathname)) return true;
-  if (pathname.startsWith('/_next/')) return true;
-  // Files served from /public (lottie JSON, images, video).
-  return STATIC_FILE.test(pathname);
+  if (PUBLIC_PAGES.has(pathname) || PUBLIC_STATIC_FILES.has(pathname)) return true;
+  // Dot segments or encoded slashes must not walk out of a static folder.
+  if (/(?:^|\/)\.\.?(?:\/|$)|%2f|%5c|\\/i.test(pathname)) return false;
+  return PUBLIC_STATIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

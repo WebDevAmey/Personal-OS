@@ -60,7 +60,7 @@ describe('middleware route protection', () => {
     }
   });
 
-  it.each(['/', '/sign-in', '/sign-up', '/verify-otp', '/forgot-password', '/reset-password', '/lottie/morning.json', '/file.svg'])(
+  it.each(['/', '/sign-in', '/sign-up', '/verify-otp', '/forgot-password', '/reset-password', '/lottie/morning.json', '/images/logo.svg', '/favicon.ico', '/fonts/inter.woff2'])(
     'allows public path %s anonymously',
     async (path) => {
       const res = await middleware(request(path));
@@ -91,6 +91,23 @@ describe('middleware route protection', () => {
     expect(isPublicPath('/api/auth/passkey/register/verify')).toBe(false);
     expect(isPublicPath('/api/tasks.json')).toBe(false);
     expect(isPublicPath('/sign-in-evil')).toBe(false);
+  });
+
+  // SEC-R-006: a static-looking extension is not enough to skip the session filter.
+  it.each(['/anything.json', '/x.js', '/y.css', '/tasks/abc.js', '/projects/p1.json', '/file.svg', '/today.txt', '/settings/a.map'])(
+    'redirects anonymous %s (extension alone is not public)',
+    async (path) => {
+      expect(isPublicPath(path)).toBe(false);
+      const res = await middleware(request(path));
+      expect(res.status).toBe(307);
+    },
+  );
+
+  it('does not let dot segments or encoded slashes escape a static folder', () => {
+    expect(isPublicPath('/images/../today')).toBe(false);
+    expect(isPublicPath('/images/%2e%2e%2ftoday')).toBe(false);
+    expect(isPublicPath('/fonts%2f..%2ftoday')).toBe(false);
+    expect(isPublicPath('/imagesx/logo.svg')).toBe(false);
   });
 
   it('matcher covers everything but build assets', () => {
