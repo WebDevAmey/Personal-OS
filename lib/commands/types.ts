@@ -53,6 +53,7 @@ export const ERROR_CODES = {
   RATE_LIMITED: { status: 429, retryable: true, message: "You've hit the command limit — try again in a minute." },
   REQUEST_IN_PROGRESS: { status: 409, retryable: true, message: 'Still working on that request.' },
   PROPOSAL_NOT_FOUND: { status: 404, retryable: false, message: 'That suggestion is no longer available.' },
+  NOT_FOUND: { status: 404, retryable: false, message: "There's nothing to undo." },
   PROPOSAL_EXPIRED: { status: 410, retryable: false, message: 'That suggestion expired — ask again.' },
   CONFLICT: { status: 409, retryable: false, message: 'That task changed since I suggested this — ask again.' },
   POLICY_REJECTED: { status: 422, retryable: false, message: "I can't do that." },
