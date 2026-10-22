@@ -6,8 +6,8 @@ recorded as passing.
 ## Current state
 
 - **Branch:** `personal-os-v1`
-- **Milestone:** M0–M4 core merged; M5 (AI), M6 (briefing), M7/M8 (UI, voice) in progress in parallel
-- **Next task:** integrate AI command engine, briefing and app UI; then AUTH-010 (remove Drizzle/Auth.js)
+- **Milestone:** M0–M10 complete on the branch; release readiness recorded in docs/14 §8
+- **Next task:** owner sign-off and the operator steps in docs/14 §8.4 (no merge to `main` or deploy without approval)
 
 ## Verification baseline (2026-10-21)
 
@@ -24,8 +24,27 @@ recorded as passing.
 | Migrations | `prisma migrate deploy` + migration test | 12 migrations apply; data-preserving mapping test passes |
 | Task view performance (10k tasks) | TASK-010 test | Today median 6.8 ms, Upcoming 7.1 ms, index scan confirmed |
 | Dependency audit | `pnpm audit --prod` | 2 high remaining (`mysql2` via drizzle-orm, removed in AUTH-010; `deepmerge-ts` via prisma config, dev-time) |
+| Release candidate (2026-10-22) | `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` | pass; 0 lint errors, 4 warnings; 96 files, 943/943 tests |
+| Browser E2E (2026-10-22) | `pnpm test:e2e` | 14/14 on the production build, three consecutive runs |
+| Dependency audit (2026-10-22) | `scripts/ci/audit.sh` | no known vulnerabilities |
 
 ## Log
+
+### 2026-10-22 (release candidate)
+
+- Merged the AI command engine (WS-4), briefing (WS-5), tokens and landing with Anatomy figures (WS-6a), app UI,
+  command palette and voice (WS-6b).
+- Independent security review: no Critical or High findings in new code. Fixed SEC-R-001..006, -010, -012 and the
+  antecedent bug in `lib/commands/repo.ts`.
+- AUTH-010: removed Auth.js, Drizzle and their dependencies; one identity system.
+- Merged the browser E2E suite: deterministic scripted model behind a double gate that refuses to boot on a
+  production deployment, Playwright against `next start` behind an HTTPS proxy. Covers the 8 AM acceptance flow,
+  bulk confirm and replay, voice, access control, axe, reduced motion and keyboard-only use.
+- Security follow-ups: 90-day `AgentRun` retention; client IP headers trusted only behind a known proxy
+  (SEC-R-013); row-bound `v2:` token encryption, plaintext refused on read, `pnpm db:encrypt-tokens` and a
+  format check constraint (SEC-B-017, SEC-R-009); dependency overrides and `scripts/ci/audit.sh` with a CI
+  workflow (SEC-B-020, SEC-R-010).
+- Release readiness written to docs/14 §8.
 
 ### 2026-10-22
 
@@ -58,6 +77,5 @@ recorded as passing.
 
 | Blocker | Impact | Workaround |
 |---------|--------|------------|
-| Push target `WebDevAmey/Personal-OS` not yet accessible to this session | Cannot push | Owner to install the GitHub app on the repo |
 | No real Google/GitHub/Anthropic/Resend/Inngest/Upstash credentials | No live integration tests | Mocks and local fixtures; operator checklist in docs/10 |
 | No access to the developer's Neon database | Cannot run remote cutover | Cutover runbook in docs/03; AUTH-009 remote = operator |
