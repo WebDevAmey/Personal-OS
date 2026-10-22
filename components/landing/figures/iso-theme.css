@@ -1,0 +1,160 @@
+/*
+ * Maps the Anatomy kit's --anatomy-* tokens onto Personal OS tokens
+ * (docs/07-ui-design-system.md §14.3). The kit's own iso.css makes `.iso`
+ * dark by default; here light is the default and dark follows the app's
+ * resolution: an explicit `data-theme` on <html>, else `.dark` (set before
+ * paint), else `prefers-color-scheme`. Tokens stay scoped to `.iso`.
+ */
+
+html .iso {
+  /* light block, from the kit's .iso[data-theme="light"] */
+  --anatomy-paper: #fbfbfa;
+  --anatomy-face: #ffffff;
+  --anatomy-top: #ffffff;
+  --anatomy-shade-0: #dcdcd9;
+  --anatomy-shade-1: #e5e5e2;
+  --anatomy-shade-2: #ededea;
+  --anatomy-shade-3: #f4f4f1;
+  --anatomy-lit-top: #ffffff;
+  --anatomy-lit-shade: #eeeeeb;
+  --anatomy-hi: #26262a;
+  --anatomy-mid: #8a8a8f;
+  --anatomy-lo: #b4b4b8;
+  --anatomy-faint: #d4d4d6;
+  --anatomy-lit: #000000;
+  --anatomy-halo: #8a8a80;
+  --anatomy-halo-opacity: 0.32;
+  --anatomy-dot: #3a3a3e;
+  --anatomy-red: #e5484d;
+  --anatomy-green: #30a46c;
+  --anatomy-lift: inset 0 1px 0 0 #ffffff, 0 0 0 1px #0000000f, 0 1px 1px -0.5px #0000000a, 0 3px 3px -1.5px #0000000a;
+
+  /* app mappings */
+  --anatomy-page: var(--background);
+  --anatomy-card: var(--surface);
+  --anatomy-strong: var(--foreground);
+  --anatomy-text: var(--muted-foreground);
+  --anatomy-muted: var(--subtle-foreground);
+  --anatomy-blue: var(--brand);
+  --anatomy-mono: var(--font-mono);
+}
+
+/* dark block, from the kit's default .iso */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .iso {
+    --anatomy-face: #1d1d21;
+    --anatomy-top: #1f1f23;
+    --anatomy-shade-0: #0f0f11;
+    --anatomy-shade-1: #131315;
+    --anatomy-shade-2: #161619;
+    --anatomy-shade-3: #1a1a1d;
+    --anatomy-lit-top: #29292e;
+    --anatomy-lit-shade: #202024;
+    --anatomy-hi: #d6d6da;
+    --anatomy-mid: #6c6c72;
+    --anatomy-lo: #404045;
+    --anatomy-faint: #2b2b30;
+    --anatomy-lit: #ffffff;
+    --anatomy-halo: #030304;
+    --anatomy-halo-opacity: 0.9;
+    --anatomy-dot: #e6e6ea;
+    --anatomy-red: #ff6b6b;
+    --anatomy-green: #6be0a0;
+    --anatomy-lift: inset 0 1px 0 0 #ffffff0a, inset 0 0 0 1px #ffffff06, 0 0 0 1px #00000026;
+  }
+}
+
+html[data-theme="dark"] .iso,
+html.dark .iso {
+  --anatomy-face: #1d1d21;
+  --anatomy-top: #1f1f23;
+  --anatomy-shade-0: #0f0f11;
+  --anatomy-shade-1: #131315;
+  --anatomy-shade-2: #161619;
+  --anatomy-shade-3: #1a1a1d;
+  --anatomy-lit-top: #29292e;
+  --anatomy-lit-shade: #202024;
+  --anatomy-hi: #d6d6da;
+  --anatomy-mid: #6c6c72;
+  --anatomy-lo: #404045;
+  --anatomy-faint: #2b2b30;
+  --anatomy-lit: #ffffff;
+  --anatomy-halo: #030304;
+  --anatomy-halo-opacity: 0.9;
+  --anatomy-dot: #e6e6ea;
+  --anatomy-red: #ff6b6b;
+  --anatomy-green: #6be0a0;
+  --anatomy-lift: inset 0 1px 0 0 #ffffff0a, inset 0 0 0 1px #ffffff06, 0 0 0 1px #00000026;
+}
+
+/* The plate: a thin rule, square-ish corners (docs/07 §7: at most 8px). */
+.iso .iso-figure {
+  margin: 0;
+}
+
+.iso .iso-plate {
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--border);
+  padding: 48px 20px;
+}
+
+.iso .iso-plate-corners {
+  inset: 16px 18px;
+}
+
+.iso .iso-plate-corner {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.iso .iso-plate-corner[data-corner="readout"] {
+  letter-spacing: 0.02em;
+}
+
+.iso .iso-legend {
+  margin-top: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.iso .iso-caption {
+  max-width: 68ch;
+}
+
+/* The interactive stage around each figure. */
+.iso .fig-stage {
+  position: relative;
+  border-radius: 4px;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.iso .fig-stage:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 6px;
+}
+
+.iso .fig-stage[data-pointer="drag"] {
+  cursor: ew-resize;
+}
+
+.iso .fig-stage[data-pointer="press"] {
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .iso .iso-plate {
+    padding: 44px 8px 64px;
+  }
+  .iso .iso-plate-corner[data-corner="hint"] {
+    bottom: 22px;
+  }
+  .iso .fig-stage {
+    overflow: hidden;
+  }
+  .iso .iso-plate .fig-stage .iso-svg {
+    width: 116%;
+    margin: -3% -8% -2%;
+  }
+}
