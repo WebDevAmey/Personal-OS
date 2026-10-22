@@ -356,7 +356,7 @@ export function TaskDetail({ taskId, field, onDeleted, headerEnd, titleId }: Tas
         <Row label="Priority" htmlFor={ids.priority}>
           <select
             id={ids.priority}
-            className={inputCls}
+            className={cn(inputCls, 'w-auto min-w-0 flex-1')}
             value={t.priority}
             disabled={deleted}
             onChange={(e) => void save('priority', { priority: Number(e.target.value) })}
