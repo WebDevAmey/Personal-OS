@@ -268,6 +268,9 @@ export function CommandPalette() {
 
               <m.div layout transition={SPRING_LAYOUT} className="max-h-[min(60vh,480px)] overflow-y-auto">
                 <div aria-live="polite" aria-atomic="false">
+                  {/* The input's aria-controls must always resolve to a listbox while a panel shows.
+                      Kept outside AnimatePresence so it unmounts at once and never coexists with the real list. */}
+                  {status !== 'idle' && <Cmdk.List hidden />}
                   <AnimatePresence mode="popLayout" initial={false}>
                     <m.div key={status} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
                       {status === 'idle' && (
@@ -326,8 +329,6 @@ export function CommandPalette() {
                           )}
                         </Cmdk.List>
                       )}
-                      {/* The input's aria-controls must always point at a listbox, even while a panel shows. */}
-                      {status !== 'idle' && <Cmdk.List hidden />}
                       {status === 'pending' && <PendingPanel label={state.pendingLabel ?? 'Working…'} />}
                       {status === 'clarification' && state.response?.kind === 'clarification' && (
                         <ClarificationPanel response={state.response} onChoose={p.chooseOption} onRephrase={() => p.reset(true)} />
