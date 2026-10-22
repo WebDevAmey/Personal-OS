@@ -1,8 +1,9 @@
 // app/(app)/_lib/data.ts — server-side reads shared by the app pages. Every
-// read is scoped to the signed-in user and goes through the repositories
-// (ADR-006); pages never import Prisma.
+// page and layout authenticates itself with requirePageUser() (layouts do not
+// re-run on client navigation, so a layout check alone is not enough); these
+// loaders take the authenticated userId and are cached per request.
+// All reads go through the repositories (ADR-006); pages never import Prisma.
 import { cache } from 'react';
-import { requirePageUser } from '@/lib/auth/session';
 import { getPreferences } from '@/lib/preferences/repo';
 import { listProjects } from '@/lib/projects/repo';
 import { getAccountProfile } from '@/lib/account/repo';
@@ -10,16 +11,15 @@ import { clockFor, toProjectDTO, type Clock } from '@/app/api/tasks/_lib/seriali
 import { listView } from '@/app/api/tasks/_lib/service';
 import { toPreferencesDTO } from '@/app/api/tasks/_lib/settings';
 
-/** One lookup per request, shared by the layout and the page. */
-export const pageUser = cache(async () => {
-  const session = await requirePageUser();
-  const prefs = await getPreferences(session.userId);
+/** Preferences and the user's clock, once per request. */
+export const userContext = cache(async (userId: string) => {
+  const prefs = await getPreferences(userId);
   const clock: Clock = clockFor(prefs.timeZone);
-  return { userId: session.userId, prefs, preferences: toPreferencesDTO(prefs), clock };
+  return { userId, prefs, preferences: toPreferencesDTO(prefs), clock };
 });
 
-export const shellData = cache(async () => {
-  const { userId, preferences, clock } = await pageUser();
+export const shellData = cache(async (userId: string) => {
+  const { preferences, clock } = await userContext(userId);
   const [projects, profile, today, inbox] = await Promise.all([
     listProjects(userId),
     getAccountProfile(userId),

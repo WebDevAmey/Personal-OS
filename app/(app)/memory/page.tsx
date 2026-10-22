@@ -3,12 +3,12 @@ import { listMemories } from '@/lib/memory/repo';
 import { PageContainer, PageHeader } from '@/components/app/page-header';
 import { MemoryManager } from '@/components/settings/memory-manager';
 import { toMemoryDTO } from '@/app/api/tasks/_lib/settings';
-import { pageUser } from '../_lib/data';
+import { requirePageUser } from '@/lib/auth/session';
 
 export const metadata: Metadata = { title: 'Memory' };
 
 export default async function MemoryPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const { userId } = await pageUser();
+  const { userId } = await requirePageUser();
   const raw = (await searchParams).q;
   const q = typeof raw === 'string' ? raw.trim().slice(0, 200) : '';
   const [live, deleted] = await Promise.all([

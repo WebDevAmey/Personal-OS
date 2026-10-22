@@ -18,7 +18,8 @@ import { TaskList } from '@/components/tasks/task-list';
 import { googleIntegrationStatus } from '@/app/api/integrations/_status';
 import { listView } from '@/app/api/tasks/_lib/service';
 import { toTaskDTO } from '@/app/api/tasks/_lib/serialize';
-import { pageUser } from '../_lib/data';
+import { requirePageUser } from '@/lib/auth/session';
+import { userContext } from '../_lib/data';
 
 export const metadata: Metadata = { title: 'Today' };
 
@@ -44,7 +45,8 @@ async function loadBriefing(userId: string): Promise<TodayBriefing> {
 }
 
 export default async function TodayPage() {
-  const { userId, clock } = await pageUser();
+  const { userId } = await requirePageUser();
+  const { clock } = await userContext(userId);
   const [briefing, tasks, google] = await Promise.all([
     loadBriefing(userId),
     listView(userId, { view: 'today', limit: 200 }, clock),

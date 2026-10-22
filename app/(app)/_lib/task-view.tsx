@@ -6,7 +6,7 @@ import { TaskFilters, type TaskFiltersProps } from '@/components/tasks/task-filt
 import { TaskList } from '@/components/tasks/task-list';
 import { ViewQuerySchema } from '@/app/api/tasks/_lib/schemas';
 import { listView, type ViewQuery } from '@/app/api/tasks/_lib/service';
-import { pageUser } from './data';
+import { userContext } from './data';
 
 export type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -30,6 +30,8 @@ export function viewQueryFrom(raw: Record<string, string | string[] | undefined>
 }
 
 export interface TaskViewProps {
+  /** The authenticated user (the page calls requirePageUser). */
+  userId: string;
   view: ViewQuery['view'];
   title: string;
   description?: React.ReactNode;
@@ -46,8 +48,8 @@ export interface TaskViewProps {
   requireQuery?: React.ReactNode;
 }
 
-export async function TaskView({ view, title, description, searchParams, filters, grouped, openByDefault, empty, projectId, actions, requireQuery }: TaskViewProps) {
-  const { userId, clock } = await pageUser();
+export async function TaskView({ userId, view, title, description, searchParams, filters, grouped, openByDefault, empty, projectId, actions, requireQuery }: TaskViewProps) {
+  const { clock } = await userContext(userId);
   const raw = await searchParams;
   const q = viewQueryFrom(raw, { view, ...(projectId ? { projectId } : {}) });
   if (openByDefault && !q.status && !q.q) q.status = OPEN;

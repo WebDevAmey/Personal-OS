@@ -6,15 +6,14 @@ import { getProject } from '@/lib/projects/repo';
 import { isRepoError } from '@/lib/db/errors';
 import { EmptyState } from '@/components/app/page-header';
 import { parseId } from '@/app/api/tasks/_lib/http';
-import { pageUser } from '../../_lib/data';
+import { requirePageUser } from '@/lib/auth/session';
 import { TaskView, type SearchParams } from '../../_lib/task-view';
 
 type Props = { params: Promise<{ id: string }>; searchParams: SearchParams };
 
-async function load(rawId: string) {
+async function load(userId: string, rawId: string) {
   const id = parseId(rawId);
   if (!id) notFound();
-  const { userId } = await pageUser();
   try {
     const p = await getProject(userId, id);
     if (p.deletedAt) notFound();
@@ -26,11 +25,13 @@ async function load(rawId: string) {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  return { title: (await load((await params).id)).name };
+  const { userId } = await requirePageUser();
+  return { title: (await load(userId, (await params).id)).name };
 }
 
 export default async function ProjectPage({ params, searchParams }: Props) {
-  const project = await load((await params).id);
+  const { userId } = await requirePageUser();
+  const project = await load(userId, (await params).id);
   return (
     <>
       <div className="mx-auto w-full max-w-[var(--content-max)] px-4 pt-6 sm:px-6">
@@ -39,6 +40,7 @@ export default async function ProjectPage({ params, searchParams }: Props) {
         </Link>
       </div>
       <TaskView
+        userId={userId}
         view="project"
         projectId={project.id}
         title={project.name}

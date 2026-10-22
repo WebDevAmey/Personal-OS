@@ -6,14 +6,14 @@ import { getTask, isRepoError } from '@/lib/tasks/repo';
 import { PageContainer } from '@/components/app/page-header';
 import { TaskPage } from '@/components/tasks/task-page';
 import { parseId } from '@/app/api/tasks/_lib/http';
-import { pageUser } from '../../_lib/data';
+import { requirePageUser } from '@/lib/auth/session';
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ field?: string }> };
 
 async function load(rawId: string) {
   const id = parseId(rawId);
   if (!id) notFound();
-  const { userId } = await pageUser();
+  const { userId } = await requirePageUser();
   try {
     return await getTask(userId, id, { includeDeleted: true });
   } catch (e) {

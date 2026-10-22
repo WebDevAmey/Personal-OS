@@ -1,13 +1,16 @@
 import type { Metadata } from 'next';
+import { requirePageUser } from '@/lib/auth/session';
 import { CircleCheck } from 'lucide-react';
 import { EmptyState } from '@/components/app/page-header';
 import { TaskView, type SearchParams } from '../../_lib/task-view';
 
 export const metadata: Metadata = { title: 'Overdue' };
 
-export default function OverduePage({ searchParams }: { searchParams: SearchParams }) {
+export default async function OverduePage({ searchParams }: { searchParams: SearchParams }) {
+  const { userId } = await requirePageUser();
   return (
     <TaskView
+      userId={userId}
       view="overdue"
       title="Overdue"
       searchParams={searchParams}

@@ -1,13 +1,16 @@
 import type { Metadata } from 'next';
+import { requirePageUser } from '@/lib/auth/session';
 import { Search } from 'lucide-react';
 import { EmptyState } from '@/components/app/page-header';
 import { TaskView, type SearchParams } from '../../_lib/task-view';
 
 export const metadata: Metadata = { title: 'Search' };
 
-export default function SearchPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function SearchPage({ searchParams }: { searchParams: SearchParams }) {
+  const { userId } = await requirePageUser();
   return (
     <TaskView
+      userId={userId}
       view="all"
       title="Search"
       description="Words match titles, notes and tags. Narrow with status:done, project:work, tag:home, due:today or priority:high."

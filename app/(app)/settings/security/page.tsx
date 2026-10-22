@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
 import { getAccountProfile, listPasskeys } from '@/lib/account/repo';
 import { SecurityPanel } from '@/components/settings/security-panel';
-import { pageUser } from '../../_lib/data';
+import { requirePageUser } from '@/lib/auth/session';
 
 export const metadata: Metadata = { title: 'Security' };
 
 export default async function SecurityPage() {
-  const { userId } = await pageUser();
+  const { userId } = await requirePageUser();
   const [passkeys, profile] = await Promise.all([listPasskeys(userId), getAccountProfile(userId)]);
   return (
     <SecurityPanel

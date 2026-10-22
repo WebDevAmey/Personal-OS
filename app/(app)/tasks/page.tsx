@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { requirePageUser } from '@/lib/auth/session';
 import { ListChecks } from 'lucide-react';
 import { EmptyState } from '@/components/app/page-header';
 import { NewTaskButton } from '@/components/app/new-task-button';
@@ -6,9 +7,11 @@ import { TaskView, type SearchParams } from '../_lib/task-view';
 
 export const metadata: Metadata = { title: 'All tasks' };
 
-export default function AllTasksPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function AllTasksPage({ searchParams }: { searchParams: SearchParams }) {
+  const { userId } = await requirePageUser();
   return (
     <TaskView
+      userId={userId}
       view="all"
       title="All tasks"
       searchParams={searchParams}
