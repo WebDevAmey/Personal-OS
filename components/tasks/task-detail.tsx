@@ -138,7 +138,7 @@ function Row({ label, htmlFor, children }: { label: string; htmlFor?: string; ch
       <label htmlFor={htmlFor} className="text-body-sm text-muted-foreground">
         {label}
       </label>
-      <div className="flex min-w-0 items-center gap-2">{children}</div>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
     </div>
   );
 }
