@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Layers } from 'lucide-react';
+import { KeyRound } from 'lucide-react';
 import { safeCallback } from '@/lib/auth/safe-callback';
+import { AuthButton, AuthDivider, AuthField, AuthLoading, AuthNotice, AuthShell, authInputCls, authLinkCls } from '@/components/auth/auth-ui';
+import { passkeysSupported, signInWithPasskey } from '@/components/settings/passkey';
 
 function SignInForm() {
   const router = useRouter();
@@ -17,6 +17,12 @@ function SignInForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [canPasskey, setCanPasskey] = useState(false);
+
+  useEffect(() => setCanPasskey(passkeysSupported()), []);
+
+  const notice = searchParams.get('verified') === 'true' ? 'Email verified. Sign in to continue.' : searchParams.get('reset') === 'true' ? 'Password changed. Sign in with your new password.' : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +51,15 @@ function SignInForm() {
     }
   };
 
+  const handlePasskey = async () => {
+    setError('');
+    setPasskeyLoading(true);
+    const r = await signInWithPasskey();
+    setPasskeyLoading(false);
+    if (r.ok) router.push(callbackUrl);
+    else if (!r.cancelled) setError(r.message);
+  };
+
   const handleGoogleSignIn = () => {
     window.location.href = '/api/auth/google';
   };
@@ -54,91 +69,63 @@ function SignInForm() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-900">
-            <Layers className="h-5 w-5 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-neutral-900">Sign in</h1>
-          <p className="text-sm text-neutral-500">Welcome back to Personal OS</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-700">Email</label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-700">Password</label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-            />
-          </div>
-
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign in'}
-          </Button>
-        </form>
-
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-neutral-200" />
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="bg-white px-2 text-neutral-500">or</span>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <Button variant="outline" className="w-full" onClick={handleGoogleSignIn}>
-            Continue with Google
-          </Button>
-          <Button variant="outline" className="w-full" onClick={handleGitHubSignIn}>
-            Continue with GitHub
-          </Button>
-        </div>
-
-        <div className="space-y-2 text-center text-sm">
-          <Link href="/forgot-password" className="text-neutral-500 hover:text-neutral-900">
+    <AuthShell
+      title="Sign in"
+      description="Welcome back to Personal OS."
+      footer={
+        <>
+          <Link href="/forgot-password" className="hover:text-foreground">
             Forgot password?
           </Link>
-          <p className="text-neutral-500">
+          <p>
             Don&apos;t have an account?{' '}
-            <Link href="/sign-up" className="font-medium text-neutral-900 hover:underline">
+            <Link href="/sign-up" className={authLinkCls}>
               Sign up
             </Link>
           </p>
-        </div>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {notice && !error && <AuthNotice tone="success">{notice}</AuthNotice>}
+        {error && <AuthNotice tone="error">{error}</AuthNotice>}
+        {canPasskey && (
+          <AuthButton type="button" variant="secondary" onClick={() => void handlePasskey()} loading={passkeyLoading} disabled={passkeyLoading || loading}>
+            {!passkeyLoading && <KeyRound aria-hidden className="size-4" />}
+            Sign in with a passkey
+          </AuthButton>
+        )}
       </div>
-    </div>
+      {canPasskey && <AuthDivider />}
+
+      <form onSubmit={handleSubmit} className={canPasskey ? 'flex flex-col gap-4' : 'mt-4 flex flex-col gap-4'}>
+        <AuthField id="email" label="Email">
+          <input id="email" className={authInputCls} type="email" autoComplete="email webauthn" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
+        </AuthField>
+        <AuthField id="password" label="Password">
+          <input id="password" className={authInputCls} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        </AuthField>
+        <AuthButton type="submit" disabled={loading || passkeyLoading} loading={loading}>
+          {loading ? 'Signing in…' : 'Sign in'}
+        </AuthButton>
+      </form>
+
+      <AuthDivider />
+      <div className="flex flex-col gap-2.5">
+        <AuthButton type="button" variant="secondary" onClick={handleGoogleSignIn}>
+          Continue with Google
+        </AuthButton>
+        <AuthButton type="button" variant="secondary" onClick={handleGitHubSignIn}>
+          Continue with GitHub
+        </AuthButton>
+      </div>
+    </AuthShell>
   );
 }
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="text-neutral-500">Loading...</div>
-      </div>
-    }>
+    <Suspense fallback={<AuthLoading />}>
       <SignInForm />
     </Suspense>
   );

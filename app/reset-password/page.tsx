@@ -3,9 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Layers } from 'lucide-react';
+import { AuthButton, AuthField, AuthLoading, AuthNotice, AuthShell, authInputCls } from '@/components/auth/auth-ui';
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -63,86 +61,73 @@ function ResetPasswordForm() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-900">
-            <Layers className="h-5 w-5 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-neutral-900">Reset password</h1>
-          <p className="text-sm text-neutral-500">
-            Enter the 6-digit code sent to <strong>{email}</strong> and your new password
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-700">Reset code</label>
-            <Input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              className="text-center text-2xl tracking-[0.5em]"
-              maxLength={6}
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-700">New password</label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              minLength={12}
-              maxLength={128}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-700">Confirm password</label>
-            <Input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              minLength={12}
-              maxLength={128}
-            />
-          </div>
-
-          <Button type="submit" className="w-full" disabled={loading || code.length !== 6}>
-            {loading ? 'Resetting...' : 'Reset password'}
-          </Button>
-        </form>
-
-        <Link href="/sign-in" className="block text-center text-sm text-neutral-500 hover:text-neutral-900">
+    <AuthShell
+      title="Reset your password"
+      description={
+        <>
+          Enter the 6-digit code sent to <strong className="font-medium text-foreground">{email}</strong> and choose a new password.
+        </>
+      }
+      footer={
+        <Link href="/sign-in" className="hover:text-foreground">
           Back to sign in
         </Link>
-      </div>
-    </div>
+      }
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {error && <AuthNotice tone="error">{error}</AuthNotice>}
+        <AuthField id="code" label="Reset code">
+          <input
+            id="code"
+            className={`${authInputCls} h-12 text-center font-mono text-heading tracking-[0.5em]`}
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            placeholder="000000"
+            maxLength={6}
+            required
+          />
+        </AuthField>
+        <AuthField id="new-password" label="New password" hint="At least 12 characters.">
+          <input
+            id="new-password"
+            className={authInputCls}
+            type="password"
+            autoComplete="new-password"
+            aria-describedby="new-password-hint"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={12}
+            maxLength={128}
+          />
+        </AuthField>
+        <AuthField id="confirm-password" label="Confirm password">
+          <input
+            id="confirm-password"
+            className={authInputCls}
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            minLength={12}
+            maxLength={128}
+          />
+        </AuthField>
+        <AuthButton type="submit" disabled={loading || code.length !== 6} loading={loading}>
+          {loading ? 'Resetting…' : 'Reset password'}
+        </AuthButton>
+      </form>
+    </AuthShell>
   );
 }
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="text-neutral-500">Loading...</div>
-      </div>
-    }>
+    <Suspense fallback={<AuthLoading />}>
       <ResetPasswordForm />
     </Suspense>
   );

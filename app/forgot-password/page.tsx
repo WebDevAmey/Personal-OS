@@ -2,9 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Layers } from 'lucide-react';
+import { AuthButton, AuthField, AuthNotice, AuthShell, authInputCls } from '@/components/auth/auth-ui';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -39,73 +37,44 @@ export default function ForgotPasswordPage() {
     }
   };
 
+  const back = (
+    <Link href="/sign-in" className="hover:text-foreground">
+      Back to sign in
+    </Link>
+  );
+
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white px-4">
-        <div className="w-full max-w-sm space-y-6 text-center">
-          <div className="flex flex-col items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-900">
-              <Layers className="h-5 w-5 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-neutral-900">Check your email</h1>
-            <p className="text-sm text-neutral-500">
-              We sent a 6-digit code to <strong>{email}</strong>
-            </p>
-          </div>
-          <Link
-            href={`/reset-password?email=${encodeURIComponent(email)}`}
-            className="inline-flex w-full items-center justify-center rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
-          >
-            Enter code
-          </Link>
-          <Link href="/sign-in" className="block text-sm text-neutral-500 hover:text-neutral-900">
-            Back to sign in
-          </Link>
-        </div>
-      </div>
+      <AuthShell
+        title="Check your email"
+        description={
+          <>
+            If an account exists for <strong className="font-medium text-foreground">{email}</strong>, we sent it a 6-digit code.
+          </>
+        }
+        footer={back}
+      >
+        <Link
+          href={`/reset-password?email=${encodeURIComponent(email)}`}
+          className="inline-flex h-10 w-full items-center justify-center rounded-md bg-brand px-4 text-body font-medium text-brand-foreground hover:bg-brand/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          Enter code
+        </Link>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-900">
-            <Layers className="h-5 w-5 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-neutral-900">Forgot password?</h1>
-          <p className="text-sm text-neutral-500">
-            Enter your email and we&apos;ll send you a reset code
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-700">Email</label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-            />
-          </div>
-
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Sending...' : 'Send reset code'}
-          </Button>
-        </form>
-
-        <Link href="/sign-in" className="block text-center text-sm text-neutral-500 hover:text-neutral-900">
-          Back to sign in
-        </Link>
-      </div>
-    </div>
+    <AuthShell title="Forgot your password?" description="Enter your email and we’ll send you a reset code." footer={back}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {error && <AuthNotice tone="error">{error}</AuthNotice>}
+        <AuthField id="email" label="Email">
+          <input id="email" className={authInputCls} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
+        </AuthField>
+        <AuthButton type="submit" disabled={loading} loading={loading}>
+          {loading ? 'Sending…' : 'Send reset code'}
+        </AuthButton>
+      </form>
+    </AuthShell>
   );
 }

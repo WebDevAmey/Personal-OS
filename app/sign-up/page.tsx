@@ -3,9 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Layers } from 'lucide-react';
+import { AuthButton, AuthDivider, AuthField, AuthNotice, AuthShell, authInputCls, authLinkCls } from '@/components/auth/auth-ui';
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -50,78 +48,51 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-900">
-            <Layers className="h-5 w-5 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-neutral-900">Create account</h1>
-          <p className="text-sm text-neutral-500">Get started with Personal OS</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-700">Email</label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-700">Password</label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              minLength={12}
-              maxLength={128}
-            />
-            <p className="text-xs text-neutral-500">Must be at least 12 characters</p>
-          </div>
-
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Creating account...' : 'Create account'}
-          </Button>
-        </form>
-
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-neutral-200" />
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="bg-white px-2 text-neutral-500">or</span>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <Button variant="outline" className="w-full" onClick={handleGoogleSignUp}>
-            Continue with Google
-          </Button>
-          <Button variant="outline" className="w-full" onClick={handleGitHubSignUp}>
-            Continue with GitHub
-          </Button>
-        </div>
-
-        <p className="text-center text-sm text-neutral-500">
+    <AuthShell
+      title="Create your account"
+      description="Get started with Personal OS."
+      footer={
+        <p>
           Already have an account?{' '}
-          <Link href="/sign-in" className="font-medium text-neutral-900 hover:underline">
+          <Link href="/sign-in" className={authLinkCls}>
             Sign in
           </Link>
         </p>
+      }
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {error && <AuthNotice tone="error">{error}</AuthNotice>}
+        <AuthField id="email" label="Email">
+          <input id="email" className={authInputCls} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
+        </AuthField>
+        <AuthField id="password" label="Password" hint="At least 12 characters.">
+          <input
+            id="password"
+            className={authInputCls}
+            type="password"
+            autoComplete="new-password"
+            aria-describedby="password-hint"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={12}
+            maxLength={128}
+          />
+        </AuthField>
+        <AuthButton type="submit" disabled={loading} loading={loading}>
+          {loading ? 'Creating account…' : 'Create account'}
+        </AuthButton>
+      </form>
+
+      <AuthDivider />
+      <div className="flex flex-col gap-2.5">
+        <AuthButton type="button" variant="secondary" onClick={handleGoogleSignUp}>
+          Continue with Google
+        </AuthButton>
+        <AuthButton type="button" variant="secondary" onClick={handleGitHubSignUp}>
+          Continue with GitHub
+        </AuthButton>
       </div>
-    </div>
+    </AuthShell>
   );
 }

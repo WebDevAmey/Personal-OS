@@ -3,9 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Layers } from 'lucide-react';
+import { AuthButton, AuthField, AuthLoading, AuthNotice, AuthShell, authInputCls } from '@/components/auth/auth-ui';
 
 function VerifyOtpForm() {
   const router = useRouter();
@@ -55,58 +53,46 @@ function VerifyOtpForm() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-900">
-            <Layers className="h-5 w-5 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-neutral-900">Verify code</h1>
-          <p className="text-sm text-neutral-500">
-            Enter the 6-digit code sent to <strong>{email}</strong>
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-neutral-700">Verification code</label>
-            <Input
-              type="text"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              className="text-center text-2xl tracking-[0.5em]"
-              maxLength={6}
-              required
-            />
-          </div>
-
-          <Button type="submit" className="w-full" disabled={loading || otp.length !== 6}>
-            {loading ? 'Verifying...' : 'Verify'}
-          </Button>
-        </form>
-
-        <Link href="/sign-in" className="block text-center text-sm text-neutral-500 hover:text-neutral-900">
+    <AuthShell
+      title="Check your email"
+      description={
+        <>
+          Enter the 6-digit code we sent to <strong className="font-medium text-foreground">{email}</strong>.
+        </>
+      }
+      footer={
+        <Link href="/sign-in" className="hover:text-foreground">
           Back to sign in
         </Link>
-      </div>
-    </div>
+      }
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {error && <AuthNotice tone="error">{error}</AuthNotice>}
+        <AuthField id="otp" label="Verification code">
+          <input
+            id="otp"
+            className={`${authInputCls} h-12 text-center font-mono text-heading tracking-[0.5em]`}
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={otp}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            placeholder="000000"
+            maxLength={6}
+            required
+          />
+        </AuthField>
+        <AuthButton type="submit" disabled={loading || otp.length !== 6} loading={loading}>
+          {loading ? 'Verifying…' : 'Verify'}
+        </AuthButton>
+      </form>
+    </AuthShell>
   );
 }
 
 export default function VerifyOtpPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="text-neutral-500">Loading...</div>
-      </div>
-    }>
+    <Suspense fallback={<AuthLoading />}>
       <VerifyOtpForm />
     </Suspense>
   );
