@@ -1,0 +1,17 @@
+.iso .guard-cavity {
+  fill: var(--anatomy-shade-0);
+  stroke: var(--anatomy-lo);
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+}
+
+/* the lamp's lens fills with the strongest ink when the change is applied */
+.iso .guard-lamp[data-on] .iso-fill,
+.iso .guard-lamp[data-on] .iso-top,
+.iso .guard-lamp[data-on] .iso-shade {
+  fill: var(--anatomy-hi);
+}
+
+.iso .fig-stage[role="switch"] {
+  cursor: pointer;
+}
