@@ -49,6 +49,12 @@ describe('purgeSecurityTables', () => {
         { email: `ret-${tag}-fresh`, type: 'SIGN_UP', otpHash: 'x', expiresAt: ago(RETENTION.verificationTokenGraceMs - MIN) },
       ],
     });
+    await prisma.agentRun.createMany({
+      data: [
+        { userId: user.id, input: `ret-${tag}-old`, createdAt: ago(RETENTION.agentRunMs + MIN) },
+        { userId: user.id, input: `ret-${tag}-fresh`, createdAt: ago(RETENTION.agentRunMs - MIN) },
+      ],
+    });
 
     const result = await purgeSecurityTables({ now: NOW });
     for (const n of Object.values(result)) expect(n).toBeGreaterThanOrEqual(1);
@@ -61,6 +67,8 @@ describe('purgeSecurityTables', () => {
     expect(challenges).toEqual([`ret-${tag}-fresh`]);
     const tokens = (await prisma.verificationToken.findMany({ where: { email: { startsWith: `ret-${tag}` } } })).map((r) => r.email);
     expect(tokens).toEqual([`ret-${tag}-fresh`]);
+    const runs = (await prisma.agentRun.findMany({ where: { userId: user.id } })).map((r) => r.input);
+    expect(runs).toEqual([`ret-${tag}-fresh`]);
   });
 
   it('works through a backlog larger than one batch', async () => {

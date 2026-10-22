@@ -1,6 +1,7 @@
 // inngest/retention.ts — daily retention purge of the security tables
 // (docs/03 §6, SEC-R-012): expired RateLimitAttempt counters, year-old
-// AuthEvent rows, and stale WebAuthn challenges and verification tokens.
+// AuthEvent rows, stale WebAuthn challenges and verification tokens, and
+// command runs older than 90 days.
 import { logger } from '@/lib/observability/logger';
 import { purgeSecurityTables } from '@/lib/security/retention';
 import { inngest } from './client';

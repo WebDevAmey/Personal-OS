@@ -8,6 +8,9 @@
 // | AuthEvent         | createdAt < now − 1 year               |
 // | WebAuthnChallenge | expiresAt < now − 1 h                  |
 // | VerificationToken | expiresAt < now − 24 h                 |
+// | AgentRun          | createdAt < now − 90 days (cascades its |
+// |                   | proposals and actions; TaskEvent keeps  |
+// |                   | its history with the run id nulled)     |
 //
 // Rows are deleted in batches of RETENTION_BATCH by primary key, each batch
 // its own statement, so a large backlog never holds one long lock.
@@ -21,6 +24,7 @@ export const RETENTION = {
   authEventMs: 365 * DAY_MS,
   webAuthnChallengeGraceMs: HOUR_MS,
   verificationTokenGraceMs: DAY_MS,
+  agentRunMs: 90 * DAY_MS,
 } as const;
 
 export const RETENTION_BATCH = 1000;
@@ -30,6 +34,7 @@ export interface RetentionResult {
   authEvents: number;
   webAuthnChallenges: number;
   verificationTokens: number;
+  agentRuns: number;
 }
 
 export async function purgeSecurityTables(opts: { now?: Date; batch?: number } = {}): Promise<RetentionResult> {
@@ -41,5 +46,6 @@ export async function purgeSecurityTables(opts: { now?: Date; batch?: number } =
     authEvents: await deleteRowsBefore('AuthEvent', before(RETENTION.authEventMs), batch),
     webAuthnChallenges: await deleteRowsBefore('WebAuthnChallenge', before(RETENTION.webAuthnChallengeGraceMs), batch),
     verificationTokens: await deleteRowsBefore('VerificationToken', before(RETENTION.verificationTokenGraceMs), batch),
+    agentRuns: await deleteRowsBefore('AgentRun', before(RETENTION.agentRunMs), batch),
   };
 }

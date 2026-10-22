@@ -10,6 +10,7 @@ export const PURGEABLE = {
   AuthEvent: { key: 'id', column: 'createdAt' },
   WebAuthnChallenge: { key: 'id', column: 'expiresAt' },
   VerificationToken: { key: 'id', column: 'expiresAt' },
+  AgentRun: { key: 'id', column: 'createdAt' },
 } as const;
 
 export type PurgeableTable = keyof typeof PURGEABLE;
