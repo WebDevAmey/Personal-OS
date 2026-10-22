@@ -514,7 +514,7 @@ model DailyBriefing {
 
 enum AgentRunStatus {
   RUNNING
-  COMPLETED                // all proposals executed or none needed
+  SUCCEEDED                // all proposals executed or none needed (as built; was COMPLETED)
   AWAITING_CONFIRMATION    // ≥1 proposal pending
   NEEDS_CLARIFICATION
   FAILED
@@ -567,14 +567,14 @@ enum RiskClass {
   EXTERNAL
 }
 
+// As built (aligned with docs/04 §proposal lifecycle): auto-approval and
+// "awaiting confirmation" are expressed by requiresConfirmation + PENDING.
 enum ProposalStatus {
-  PROPOSED                 // validated, policy not yet applied
-  AUTO_APPROVED            // policy allowed auto-execute
-  AWAITING_CONFIRMATION
-  CONFIRMED                // user confirmed, not yet executed
+  PENDING                  // validated; waits for confirmation when requiresConfirmation
+  NEEDS_CLARIFICATION
   EXECUTING                // claimed by an executor (lock)
   EXECUTED
-  REJECTED                 // user cancelled
+  CANCELLED                // user cancelled
   EXPIRED
   FAILED
 }
@@ -781,7 +781,7 @@ Each index matches a specific query:
 | `Task_estimate_check` | `CHECK ("estimateMinutes" IS NULL OR "estimateMinutes" > 0)` | M3 |
 | `TaskDependency_no_self_check` | `CHECK ("taskId" <> "dependsOnId")` | M3 |
 | `UserPreference_time_check` | `CHECK ("briefingHour" BETWEEN 0 AND 23 AND "briefingMinute" BETWEEN 0 AND 59 AND ("workdayStart" IS NULL OR "workdayStart" ~ '^([01]\d\|2[0-3]):[0-5]\d$') AND ("lunchEndsAt" IS NULL OR "lunchEndsAt" ~ '^([01]\d\|2[0-3]):[0-5]\d$'))` | M2 |
-| `IntegrationAccount_token_format_check` | `CHECK ("accessToken" LIKE 'v1:%' AND ("refreshToken" IS NULL OR "refreshToken" LIKE 'v1:%'))`. Added **NOT VALID** in M6, then `VALIDATE CONSTRAINT` after the encryption script (§7.4) | M6 / M6b |
+| `IntegrationAccount_token_format_check` | `CHECK ("accessToken" LIKE 'v1:%' AND ("refreshToken" IS NULL OR "refreshToken" LIKE 'v1:%'))`. As built: added (and validated) in M6b, after the encryption script (§7.4) and the sealed-token callbacks; not present in M6 | M6b |
 
 ---
 
@@ -836,11 +836,17 @@ batches of 1,000 by primary key, and each batch is its own transaction.
 | M3 | `…_task_model_v2` | Enums `TaskStatus`, `TaskSource`, `ActorType`, `TaskEventType`, `ReminderStatus`, `ReminderChannel`. Tables `Project`, `TaskDependency`, `Reminder`, `TaskEvent`. Task changes per the SQL below. CHECKs and the partial unique index |
 | M4 | `…_briefing_runs` | Enums, `BriefingRun`, and the DailyBriefing transformation (SQL below) |
 | M5 | `…_command_pipeline` | AgentRun columns and enums, `ProposedAction`, AgentAction `userId` backfill and status enum mapping |
-| M6 | `…_integration_account_v2` | New columns (`providerAccountId`, `accountEmail`, `status`, `lastRefreshedAt`, `lastErrorCode`, `lastErrorAt`, `updatedAt`). Backfill `providerAccountId` from `User.googleId`. Token format CHECK `NOT VALID` |
+| M6 | `…_integration_account_v2` | New columns (`providerAccountId`, `accountEmail`, `status`, `lastRefreshedAt`, `lastErrorCode`, `lastErrorAt`, `updatedAt`). Backfill `providerAccountId` (and `accountEmail`) from `User`. **As built:** no token CHECK here; the CHECK is added together with its validation in M6b, after the auth callbacks write sealed tokens |
 | M6b | `…_validate_token_format` | `ALTER TABLE "IntegrationAccount" VALIDATE CONSTRAINT "IntegrationAccount_token_format_check"`. Deployed only after the encryption script reports 0 plaintext rows |
 | M7 | `…_auth_event_types` | `ALTER TYPE "AuthEventType" ADD VALUE IF NOT EXISTS …` for each new value |
-| M8 | `…_audit_and_auth_hardening` | `AuditEvent` table. AuthEvent `requestId` and indexes. `WebAuthnPurpose`, `WebAuthnChallenge.purpose`/`bindingHash`/unique `challenge` (delete expired rows first). `PasskeyCredential.counter` to BIGINT (`USING "counter"::bigint`) and `aaguid`. `VerificationToken` index change |
+| M8 | `…_audit_and_auth_hardening` | `AuditEvent` table. AuthEvent `requestId` and indexes. `WebAuthnPurpose`, `WebAuthnChallenge.purpose`/`bindingHash`/unique `challenge` (delete expired, orphan and duplicate rows first), owner FK. `aaguid`. `VerificationToken` index change |
 | M9 | `…_memory_v2` | `MemorySource`, `embeddingModel`, `source`, `deletedAt`, `updatedAt` (DEFAULT now()). Index `(userId, createdAt)` replaces `(userId)` |
+| M7b | `20261021090900_auth_ws2_followups` | As built: `AuthEventType` += `PASSWORD_RESET_FAILED`, `CSRF_BLOCKED`; `PasskeyCredential.counter` INTEGER → BIGINT (moved here from M8) |
+
+As-built file names: `20261021090000_fix_memory_hnsw_index` (M1) … `20261021090800_memory_v2` (M9), then M7b.
+Verified by `prisma/__tests__/migrations.int.test.ts` (old-shape rows seeded at the init migration, both
+HNSW paths) and `pnpm db:integrity` (`scripts/db-integrity.ts`, checks I1–I10 plus X1 "one open occurrence
+per series" and X2 "tasks without history").
 
 **M1: HNSW fix** (works on a fresh database and on one previously migrated by Drizzle):
 
@@ -952,7 +958,7 @@ ALTER TABLE "AgentAction" ALTER COLUMN "status" TYPE "AgentActionStatus"
 ```
 
 It is preceded by integrity check I6 (no other values). The `userId` column is added nullable, backfilled
-from `AgentRun`, and then set `NOT NULL`. Legacy `AgentRun` rows get `status = 'COMPLETED'` and
+from `AgentRun`, and then set `NOT NULL`. Legacy `AgentRun` rows get `status = 'SUCCEEDED'` and
 `clientRequestId = NULL`. That is allowed, because Postgres unique constraints treat NULLs as distinct.
 
 ### 7.3 Integrity checks
@@ -1098,3 +1104,20 @@ for emergency use on a branch only.
 
 This catches both an accidental `DROP INDEX "Memory_embedding_hnsw_idx"` in a generated migration and
 missing hand-written renames.
+
+### 7.7 As-built differences (WS-1)
+
+Where the implementation differs from the listing in §2:
+
+| Area | As built |
+|---|---|
+| `UserPreference` | Adds `weekStart` (0–6), `workdayEnd`, `reminderEmailEnabled`, `briefingWebSearchEnabled`; all covered by `UserPreference_time_check`. `lib/preferences/repo.ts` creates the default row lazily on first read |
+| `Task` | Extra indexes `(userId, startAt)` and `(userId, completedAt)` for the Today and Completed views |
+| `TaskEvent` | Adds `source`, `operationId`, `batchId` (bulk undo) and `revertsEventId @unique` (an event can be undone once) |
+| `TaskOperation` | New table, PK `(userId, operationId)`: idempotency ledger for task mutations. Claimed with `INSERT … ON CONFLICT DO NOTHING` inside the mutating transaction; a replay returns the stored `result` |
+| `BriefingRun` | Adds `metrics` (JSONB) |
+| `AgentRun` | Adds `intent`, `stepCount`; status `SUCCEEDED` replaces `COMPLETED` |
+| `ProposedAction` | Adds `diff` and `requiresConfirmation`; status set per §2 as-built enum |
+| `IntegrationAccount` | Token-format CHECK deferred to M6b (see §7.2) |
+| Repositories | Shared helpers live in `lib/db/tx.ts` (`withTransaction`, `reader`, `isUniqueViolation`) and `lib/db/errors.ts` (`NotFoundError`, `ConflictError`, `ValidationError`). `lib/tasks/queries.ts` and `lib/memory/queries.ts` remain as deprecated adapters over the repos with their old signatures |
+| Memory | Saved even if the embedder fails (`embedding` NULL = pending, excluded from search); `listMemoriesPendingEmbedding` / `setMemoryEmbedding` support a backfill job |
