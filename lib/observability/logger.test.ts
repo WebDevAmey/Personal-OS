@@ -37,3 +37,10 @@ describe('createLogger', () => {
     expect(record).toMatchObject({ level: 'info', event: 'task.updated', correlationId: 'c1', userId: 'u1', taskId: 't1', token: REDACTED });
   });
 });
+
+describe('metric keys', () => {
+  it('keeps token counts but still redacts token values', () => {
+    const out = redact({ inputTokens: 12, totalTokens: 30, tokenCount: 4, accessToken: 'x', token: 'y' }) as Record<string, unknown>;
+    expect(out).toMatchObject({ inputTokens: 12, totalTokens: 30, tokenCount: 4, accessToken: REDACTED, token: REDACTED });
+  });
+});

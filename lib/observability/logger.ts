@@ -8,6 +8,8 @@ type Level = 'debug' | 'info' | 'warn' | 'error';
 const LEVELS: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
 const SENSITIVE_KEY = /pass(word)?|secret|token|authorization|cookie|otp|code_verifier|refresh|access_?key|api_?key|session|body|html|snippet|embedding/i;
+// Counts such as `tokens`, `inputTokens` or `tokenCount` are metrics, not credentials.
+const METRIC_KEY = /^((input|output|total|prompt|completion)tokens|tokens|token(count|sused))$/i;
 const TOKEN_LIKE = /\b(ya29\.[\w-]+|gh[pousr]_[\w]{20,}|eyJ[\w-]+\.[\w-]+\.[\w-]+|sk-[\w-]{16,})\b/g;
 const MAX_STRING = 500;
 const MAX_DEPTH = 5;
@@ -28,7 +30,7 @@ export function redact(value: unknown, depth = 0): unknown {
   if (Array.isArray(value)) return value.slice(0, 20).map((v) => redact(v, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
-    out[key] = SENSITIVE_KEY.test(key) ? REDACTED : redact(v, depth + 1);
+    out[key] = SENSITIVE_KEY.test(key) && !METRIC_KEY.test(key) ? REDACTED : redact(v, depth + 1);
   }
   return out;
 }
