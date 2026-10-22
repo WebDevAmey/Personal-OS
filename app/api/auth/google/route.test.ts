@@ -1,39 +1,48 @@
-// app/api/auth/google/route.test.ts
+// @vitest-environment node
+// GET /api/auth/google: state + PKCE (S256) cookies and redirect.
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { GET } from './route';
 
+const start = () => GET(new Request('http://localhost:3000/api/auth/google', { headers: { 'x-real-ip': `10.9.${Math.random()}` } }));
+
 describe('GET /api/auth/google', () => {
-  // vi.stubEnv (rather than assigning process.env.NODE_ENV directly) because
-  // @types/node marks NODE_ENV read-only on ProcessEnv.
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
+  afterEach(() => vi.unstubAllEnvs());
 
-  it('redirects to Google with a state cookie that is HttpOnly, SameSite=Lax, and short-lived', async () => {
-    const res = await GET();
+  it('redirects to Google with state and an S256 code challenge matching the PKCE cookie', async () => {
+    const res = await start();
     expect(res.status).toBe(307);
-    expect(res.headers.get('location')).toContain('accounts.google.com');
-    const cookie = res.headers.get('set-cookie');
-    expect(cookie).toMatch(/^google_oauth_state=/);
-    expect(cookie).toMatch(/HttpOnly/);
-    expect(cookie).toMatch(/SameSite=Lax/);
-    expect(cookie).toMatch(/Max-Age=300/);
+    const location = new URL(res.headers.get('location')!);
+    expect(location.hostname).toBe('accounts.google.com');
+    expect(location.searchParams.get('code_challenge_method')).toBe('S256');
+
+    const cookies = res.headers.getSetCookie();
+    const state = cookies.find((c) => c.startsWith('google_oauth_state='))!;
+    const pkce = cookies.find((c) => c.startsWith('google_oauth_pkce='))!;
+    for (const c of [state, pkce]) {
+      expect(c).toMatch(/HttpOnly/);
+      expect(c).toMatch(/SameSite=Lax/);
+      expect(c).toMatch(/Max-Age=300/);
+      expect(c).toMatch(/Path=\//);
+    }
+    expect(location.searchParams.get('state')).toBe(state.split(';')[0].split('=')[1]);
+    const verifier = decodeURIComponent(pkce.split(';')[0].split('=')[1]);
+    expect(verifier).toMatch(/^[\w-]{43,128}$/);
+    expect(location.searchParams.get('code_challenge')).toBe(createHash('sha256').update(verifier).digest('base64url'));
   });
 
-  // Finding 3: this is the one auth-relevant cookie in the codebase that
-  // could be missing Secure in production, letting a network attacker
-  // capture it over plaintext HTTP and pull off a login-CSRF. It must match
-  // the `isProd ? '; Secure' : ''` pattern the session cookie already uses
-  // (see app/api/auth/login/route.ts).
-  it('marks the state cookie Secure in production', async () => {
+  it('marks the flow cookies Secure with the __Host- prefix in production', async () => {
     vi.stubEnv('NODE_ENV', 'production');
-    const res = await GET();
-    expect(res.headers.get('set-cookie')).toMatch(/; Secure/);
+    const cookies = (await start()).headers.getSetCookie();
+    expect(cookies).toHaveLength(2);
+    for (const c of cookies) {
+      expect(c).toMatch(/^__Host-google_oauth_(state|pkce)=/);
+      expect(c).toMatch(/; Secure/);
+    }
   });
 
-  it('does not mark the state cookie Secure outside production', async () => {
+  it('does not mark the cookies Secure outside production', async () => {
     vi.stubEnv('NODE_ENV', 'test');
-    const res = await GET();
-    expect(res.headers.get('set-cookie')).not.toMatch(/; Secure/);
+    for (const c of (await start()).headers.getSetCookie()) expect(c).not.toMatch(/; Secure/);
   });
 });

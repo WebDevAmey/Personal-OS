@@ -16,24 +16,29 @@
 // unverified "victim@example.com" GitHub email could get linked into the
 // victim's existing account.
 
-export function buildGithubAuthUrl(state: string): string {
+export function buildGithubAuthUrl(state: string, codeChallenge: string): string {
   const url = new URL('https://github.com/login/oauth/authorize');
   url.searchParams.set('client_id', process.env.GITHUB_CLIENT_ID!);
   url.searchParams.set('redirect_uri', `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/github/callback`);
   url.searchParams.set('scope', 'read:user user:email');
   url.searchParams.set('state', state);
+  // GitHub OAuth apps accept PKCE S256; the verifier is sent on exchange.
+  url.searchParams.set('code_challenge', codeChallenge);
+  url.searchParams.set('code_challenge_method', 'S256');
   return url.toString();
 }
 
-export async function exchangeGithubCode(code: string): Promise<string> {
+export async function exchangeGithubCode(code: string, codeVerifier: string): Promise<string> {
   const res = await fetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
+    signal: AbortSignal.timeout(10_000),
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body: new URLSearchParams({
       code,
       client_id: process.env.GITHUB_CLIENT_ID!,
       client_secret: process.env.GITHUB_CLIENT_SECRET!,
       redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/github/callback`,
+      code_verifier: codeVerifier,
     }),
   });
   if (!res.ok) {
@@ -62,6 +67,7 @@ export interface GithubUser {
 
 export async function fetchGithubUser(accessToken: string): Promise<GithubUser> {
   const res = await fetch('https://api.github.com/user', {
+    signal: AbortSignal.timeout(10_000),
     headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github+json' },
   });
   if (!res.ok) {
@@ -82,6 +88,7 @@ export interface GithubEmail {
 
 export async function fetchGithubUserEmails(accessToken: string): Promise<GithubEmail[]> {
   const res = await fetch('https://api.github.com/user/emails', {
+    signal: AbortSignal.timeout(10_000),
     headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github+json' },
   });
   if (!res.ok) {

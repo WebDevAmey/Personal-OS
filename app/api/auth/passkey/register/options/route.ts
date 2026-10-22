@@ -1,17 +1,22 @@
 // app/api/auth/passkey/register/options/route.ts
 import { generateRegistrationOptions, type AuthenticatorTransportFuture } from '@simplewebauthn/server';
-import { getSession } from '@/lib/auth/session';
+import { requireUser } from '@/lib/auth/session';
 import { prisma } from '@/lib/prisma';
+import { noStoreHeaders } from '@/lib/auth/http';
+import { assertSameOrigin } from '@/lib/security/csrf';
 import { RP_NAME, RP_ID, userIdToUserHandle } from '@/lib/auth/webauthn';
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
-export async function POST() {
+export async function POST(req: Request) {
+  const blocked = assertSameOrigin(req);
+  if (blocked) return blocked;
+
   // Unauthenticated callers are rejected before touching the database or
   // the WebAuthn library at all -- passkey registration only ever attaches
   // a credential to an already signed-in user.
-  const session = await getSession();
-  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  const session = await requireUser(req);
+  if (session instanceof Response) return session;
 
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
@@ -60,5 +65,5 @@ export async function POST() {
     data: { userId: user.id, challenge: options.challenge, expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS) },
   });
 
-  return Response.json(options);
+  return Response.json(options, { headers: noStoreHeaders() });
 }

@@ -1,100 +1,100 @@
 // app/api/auth/passkey/register/verify/route.ts
+// Verifies a passkey registration for the signed-in user.
+//
+// The user's registration challenge is consumed atomically before
+// verification (single use, success or failure; the client asks for new
+// options to retry). Adding a credential bumps sessionVersion, so sessions
+// issued before the change are revoked; this browser gets a fresh cookie.
 import { z } from 'zod';
 import { verifyRegistrationResponse, type RegistrationResponseJSON } from '@simplewebauthn/server';
-import { getSession } from '@/lib/auth/session';
+import { requireUser, createSessionCookie } from '@/lib/auth/session';
 import { prisma } from '@/lib/prisma';
 import { RP_ID, ORIGIN } from '@/lib/auth/webauthn';
+import { consumeRegistrationChallenge } from '@/lib/auth/passkey-challenge';
+import { invalidInput, noStoreHeaders, readJson } from '@/lib/auth/http';
+import { csrfGuard } from '@/lib/security/csrf';
+import { recordAuthEvent } from '@/lib/audit/auth-events';
 
 // `response` is the opaque RegistrationResponseJSON produced by the
 // browser's navigator.credentials.create() call (via @simplewebauthn/browser).
-// Its exact shape isn't validated here -- verifyRegistrationResponse() below
-// does full structural + cryptographic validation and is the real gate.
+// verifyRegistrationResponse() does full structural + cryptographic
+// validation and is the real gate.
 const Schema = z.object({
   response: z.object({}).passthrough(),
-  name: z.string().min(1).optional(),
+  name: z.string().trim().min(1).max(100).optional(),
 });
 
 export async function POST(req: Request) {
+  const blocked = csrfGuard(req);
+  if (blocked) return blocked;
+
   // Unauthenticated callers are rejected before touching the database or
   // the WebAuthn library at all.
-  const session = await getSession();
-  if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  const session = await requireUser(req);
+  if (session instanceof Response) return session;
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: 'Invalid input' }, { status: 400 });
-  }
-  const parsed = Schema.safeParse(body);
-  if (!parsed.success) return Response.json({ error: 'Invalid input' }, { status: 400 });
+  const parsed = Schema.safeParse(await readJson(req));
+  if (!parsed.success) return invalidInput();
   const { response, name } = parsed.data;
 
-  // Scoped to the signed-in user's id -- this can only ever consume a
-  // challenge that options/route.ts issued to THIS session, never a
-  // challenge belonging to another user. expiresAt enforces the 5-minute
-  // TTL set when the challenge was created.
-  const challengeRecord = await prisma.webAuthnChallenge.findFirst({
-    where: { userId: session.userId, expiresAt: { gt: new Date() } },
-    orderBy: { createdAt: 'desc' },
-  });
-  if (!challengeRecord) return Response.json({ error: 'Challenge expired or not found' }, { status: 400 });
+  // Scoped to the signed-in user's id: only a challenge issued to THIS user
+  // can be consumed.
+  const expectedChallenge = await consumeRegistrationChallenge(session.userId);
+  if (!expectedChallenge) return Response.json({ error: 'Challenge expired or not found' }, { status: 400 });
+
+  const failure = async (reason: string) => {
+    await recordAuthEvent({ event: 'PASSKEY_LOGIN_FAILURE', req, userId: session.userId, metadata: { reason, stage: 'registration' } });
+    return Response.json({ error: 'Passkey verification failed' }, { status: 400 });
+  };
 
   let verification;
   try {
     verification = await verifyRegistrationResponse({
-      // Safe: verifyRegistrationResponse performs the real structural and
-      // cryptographic validation of this payload and throws (caught below)
-      // or reports verified: false on anything malformed.
       response: response as unknown as RegistrationResponseJSON,
-      expectedChallenge: challengeRecord.challenge,
+      expectedChallenge,
       expectedOrigin: ORIGIN,
       expectedRPID: RP_ID,
+      requireUserVerification: true,
     });
   } catch {
-    // The library throws (rather than resolving verified: false) on a
-    // structurally malformed response, e.g. a missing credential id. Treat
-    // that the same as a failed verification instead of letting it surface
-    // as an unhandled 500. The challenge is intentionally left intact so a
-    // legitimate client can retry within the TTL.
-    return Response.json({ error: 'Passkey verification failed' }, { status: 400 });
+    // The library throws on a structurally malformed response.
+    return failure('verification_error');
   }
 
   if (!verification.verified || !verification.registrationInfo) {
-    return Response.json({ error: 'Passkey verification failed' }, { status: 400 });
+    return failure('not_verified');
   }
 
   const { credential, credentialBackedUp, credentialDeviceType } = verification.registrationInfo;
-  // credential.transports is transport hints (e.g. "usb", "nfc") that are
-  // NOT part of the signed payload verifyRegistrationResponse checked above
-  // -- it's outside the cryptographic guarantee, so a malformed value here
-  // could still reach Prisma's String[] column and throw an unhandled
-  // PrismaClientValidationError. Degrade to an empty array instead of
-  // crashing.
-  // Widen to `unknown` first -- the library's own type says this is already
-  // AuthenticatorTransportFuture[], but that type is not something the
-  // signature verification above actually enforces, so it can't be trusted
-  // at runtime.
+  // Transport hints are outside the signed payload; keep only strings.
   const rawTransports: unknown = credential.transports;
   const transports = Array.isArray(rawTransports)
     ? rawTransports.filter((t): t is string => typeof t === 'string')
     : [];
-  await prisma.passkeyCredential.create({
-    data: {
-      id: credential.id,
-      userId: session.userId,
-      publicKey: Buffer.from(credential.publicKey),
-      counter: credential.counter,
-      transports,
-      backedUp: credentialBackedUp,
-      deviceType: credentialDeviceType,
-      name,
-    },
-  });
 
-  // Single-use: delete the challenge now that it has been consumed by a
-  // successful verification, so it can never be replayed.
-  await prisma.webAuthnChallenge.delete({ where: { id: challengeRecord.id } });
+  const [, user] = await prisma.$transaction([
+    prisma.passkeyCredential.create({
+      data: {
+        id: credential.id,
+        userId: session.userId,
+        publicKey: Buffer.from(credential.publicKey),
+        counter: BigInt(credential.counter),
+        transports,
+        backedUp: credentialBackedUp,
+        deviceType: credentialDeviceType,
+        name,
+      },
+    }),
+    prisma.user.update({
+      where: { id: session.userId },
+      data: { sessionVersion: { increment: 1 } },
+      select: { id: true, sessionVersion: true },
+    }),
+  ]);
 
-  return Response.json({ message: 'Passkey registered' });
+  await recordAuthEvent({ event: 'PASSKEY_ADDED', req, userId: session.userId });
+  return Response.json(
+    { message: 'Passkey registered' },
+    { headers: noStoreHeaders({ 'Set-Cookie': await createSessionCookie(user) }) },
+  );
 }
