@@ -85,7 +85,7 @@ model PasskeyCredential {
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   publicKey  Bytes
   transports String[]
-  counter    Int       @default(0) // kept Int (additive-only rule); BigInt widening is a later WS-2 change
+  counter    BigInt    @default(0) // WebAuthn counters are unsigned 32-bit (overflow INTEGER)
   backedUp   Boolean   @default(false)
   deviceType String
   aaguid     String?
@@ -165,6 +165,8 @@ enum AuthEventType {
   SESSIONS_REVOKED
   INTEGRATION_CONNECTED
   INTEGRATION_DISCONNECTED
+  PASSWORD_RESET_FAILED
+  CSRF_BLOCKED
 }
 
 model AuthEvent {

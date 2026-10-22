@@ -14,6 +14,8 @@ export default defineConfig({
   plugins: [tsconfigPaths(), react()],
   test: {
     globals: true,
+    // Also at the root so no project ever picks up other worktrees' copies.
+    exclude,
     setupFiles: ['./lib/test/setup.ts'],
     globalSetup: ['./lib/test/global-db-setup.ts'],
     passWithNoTests: true,
