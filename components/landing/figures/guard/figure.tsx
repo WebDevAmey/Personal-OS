@@ -15,7 +15,7 @@ export function GuardFigure() {
         { mark: "raised", label: "Cover and switch" },
         { mark: "lit", label: "Applied" },
       ]}
-      caption={`"${COMMAND}" would change ${CHANGES} tasks at once, so it waits behind a cover until you confirm. Deletes and anything sent outside the app wait the same way, and every change has Undo.`}
+      caption={`"${COMMAND}" would change ${CHANGES} tasks at once, so it waits behind a cover until you confirm. Deletes and new Gmail drafts wait the same way, and every change has Undo.`}
     >
       <FigureStage
         kind="guard"
