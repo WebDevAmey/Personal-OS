@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { executedMessage, pastTense, truthful } from './narrate';
 import { cleanReference, isDueTodayDescription, isPronoun } from './resolve-task';
+import { mentionsAntecedent, referenceInUserInput } from './resolve-task';
 import { inUserInput, untrustedStrings } from './run-state';
 
 describe('truthful', () => {
@@ -50,5 +51,36 @@ describe('argument taint (docs/04 §10.2)', () => {
   it('collects every non-handle string not in the input, deeply', () => {
     const isHandle = (s: string) => s.startsWith('tsk_h_');
     expect(untrustedStrings({ task: 'tsk_h_abcdefghij', changes: { due: 'tomorrow', tags: ['urgent'] } }, input, isHandle)).toEqual(['urgent']);
+  });
+
+  // SEC-R-004
+  it('never treats empty or short strings as user-derived', () => {
+    for (const v of ['', ' ', 'a', 'it', 're', 'to', 'the']) expect(inUserInput(v, input)).toBe(false);
+  });
+  it('matches whole phrases only, not fragments of words', () => {
+    expect(inUserInput('port', input)).toBe(false);
+    expect(inUserInput('morrow', input)).toBe(false);
+    expect(inUserInput('ove the rep', input)).toBe(false);
+    expect(inUserInput('report to', input)).toBe(true);
+    expect(inUserInput('TOMORROW', 'see you tomorrow.')).toBe(true);
+  });
+  it('treats regex metacharacters in the value literally', () => {
+    expect(inUserInput('a.b*c', 'note a.b*c here')).toBe(true);
+    expect(inUserInput('a.b*c', 'note aXbbbc here')).toBe(false);
+  });
+});
+
+describe('antecedent references (SEC-R-001)', () => {
+  it('counts a pronoun as the user\'s only when their input contains it', () => {
+    expect(referenceInUserInput('it', 'mark it done')).toBe(true);
+    expect(referenceInUserInput('it', 'summarise my latest email')).toBe(false);
+    expect(referenceInUserInput('it', 'edit the item')).toBe(false);
+    expect(referenceInUserInput('the thing due today', 'what does my email say?')).toBe(false);
+    expect(referenceInUserInput('the thing due today', 'finish the thing due today')).toBe(true);
+  });
+  it('detects antecedent words in the input', () => {
+    expect(mentionsAntecedent('move it to tomorrow')).toBe(true);
+    expect(mentionsAntecedent('summarise my latest email')).toBe(false);
+    expect(mentionsAntecedent('add a task')).toBe(false);
   });
 });

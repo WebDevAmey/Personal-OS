@@ -26,6 +26,7 @@ import {
   type AgentRun,
 } from './repo';
 import type { RunState } from './run-state';
+import { mentionsAntecedent } from './resolve-task';
 import { summarizeTask } from './summaries';
 import {
   CommandRequest,
@@ -38,6 +39,7 @@ import {
 } from './types';
 
 const ANTECEDENT_WINDOW_MS = 10 * 60_000;
+const DAILY_LIMIT_MESSAGE = "You've used today's command allowance — try again tomorrow.";
 
 const INTENT: Record<string, string> = {
   propose_create_task: 'task.create',
@@ -137,7 +139,10 @@ async function buildState(userId: string, run: AgentRun, req: CommandRequest, de
     try {
       const task = await getTask(userId, req.context.focusedTaskId);
       state.focusedTaskId = task.id;
-      const s = await summarizeTask(state, task, { userDerived: true });
+      // The focused task counts as the user's own target only when their words
+      // refer to it ("mark it done"); otherwise a run that reads an email cannot
+      // act on it without confirmation (SEC-R-001).
+      const s = await summarizeTask(state, task, { userDerived: mentionsAntecedent(state.input) });
       focused = { handle: s.handle, title: s.title };
     } catch (e) {
       if (!(e instanceof NotFoundError)) throw e;
@@ -204,9 +209,13 @@ export async function handleCommand(userId: string, body: unknown, deps: Command
   }
 
   const limit = await deps.rateLimit(userId, 'ai');
-  if (!limit.allowed) {
-    if (run) await finishRun(userId, run.id, { status: 'RATE_LIMITED', result: errorBody('RATE_LIMITED') as unknown as Prisma.InputJsonValue, errorCode: 'RATE_LIMITED', finishedAt: now });
-    return errorBody('RATE_LIMITED', { retryAfterMs: limit.retryAfterMs ?? 60_000 });
+  // Per-user daily budget behind the per-minute window (SEC-R-003).
+  const daily = limit.allowed ? await deps.rateLimit(userId, 'command_daily') : null;
+  if (!limit.allowed || (daily && !daily.allowed)) {
+    const denied = daily && !daily.allowed ? daily : limit;
+    const message = daily && !daily.allowed ? DAILY_LIMIT_MESSAGE : undefined;
+    if (run) await finishRun(userId, run.id, { status: 'RATE_LIMITED', result: errorBody('RATE_LIMITED', { message }) as unknown as Prisma.InputJsonValue, errorCode: 'RATE_LIMITED', finishedAt: now });
+    return errorBody('RATE_LIMITED', { retryAfterMs: denied.retryAfterMs ?? 60_000, message });
   }
 
   if (!run) {

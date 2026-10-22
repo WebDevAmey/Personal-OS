@@ -11,7 +11,8 @@ import { passkeysSupported, signInWithPasskey } from '@/components/settings/pass
 function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Same-origin relative paths only (SEC-B-011): anything else becomes /today.
+  // The raw callbackUrl is never navigated to: only the validated, normalised
+  // same-origin path is (SEC-B-011, SEC-R-002). Anything else becomes /today.
   const callbackUrl = safeCallback(searchParams.get('callbackUrl'));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,7 +44,7 @@ function SignInForm() {
         return;
       }
 
-      router.push(callbackUrl);
+      router.push(safeCallback(callbackUrl));
     } catch {
       setError('Something went wrong');
     } finally {

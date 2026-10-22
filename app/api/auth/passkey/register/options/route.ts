@@ -1,12 +1,33 @@
 // app/api/auth/passkey/register/options/route.ts
+// Starts a passkey registration for the signed-in user.
+//
+// Adding a passkey creates a persistent credential, so a session alone is not
+// enough (SEC-R-005): the user must have signed in within RECENT_AUTH_MS, or
+// re-enter their password in this request. The issued challenge (5-minute
+// TTL, single use) is what verify/route.ts accepts as proof of that check.
+import { z } from 'zod';
 import { generateRegistrationOptions, type AuthenticatorTransportFuture } from '@simplewebauthn/server';
-import { requireUser } from '@/lib/auth/session';
+import { getSessionWithAuthTime, isRecentAuth, unauthorizedResponse } from '@/lib/auth/session';
 import { prisma } from '@/lib/prisma';
-import { noStoreHeaders } from '@/lib/auth/http';
+import { invalidInput, noStoreHeaders } from '@/lib/auth/http';
+import { burnPasswordCheck, LoginPasswordSchema, verifyPassword } from '@/lib/auth/password';
+import { clearFailedAttempts, reservePasswordAttempt } from '@/lib/auth/lockout';
 import { assertSameOrigin } from '@/lib/security/csrf';
+import { checkAuthRateLimit, rateLimitedResponse } from '@/lib/security/auth-rate-limit';
+import { clientIp } from '@/lib/security/request-meta';
+import { recordAuthEvent } from '@/lib/audit/auth-events';
 import { RP_NAME, RP_ID, userIdToUserHandle } from '@/lib/auth/webauthn';
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+const BodySchema = z.object({ password: LoginPasswordSchema.optional() }).strict();
+
+function reauthRequired(): Response {
+  return Response.json(
+    { error: 'Please confirm it is you: sign in again or enter your password.', code: 'REAUTH_REQUIRED' },
+    { status: 401, headers: noStoreHeaders() },
+  );
+}
 
 export async function POST(req: Request) {
   const blocked = assertSameOrigin(req);
@@ -15,14 +36,46 @@ export async function POST(req: Request) {
   // Unauthenticated callers are rejected before touching the database or
   // the WebAuthn library at all -- passkey registration only ever attaches
   // a credential to an already signed-in user.
-  const session = await requireUser(req);
-  if (session instanceof Response) return session;
+  const session = await getSessionWithAuthTime(req);
+  if (!session) return unauthorizedResponse();
+
+  // An empty body is allowed (recent sign-in); anything else must parse.
+  const text = await req.text();
+  let raw: unknown = {};
+  if (text.trim() !== '') {
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return invalidInput();
+    }
+  }
+  const parsed = BodySchema.safeParse(raw);
+  if (!parsed.success) return invalidInput();
 
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
     include: { passkeyCredentials: true },
   });
   if (!user) return Response.json({ error: 'User not found' }, { status: 404 });
+
+  if (!isRecentAuth(session.authenticatedAt)) {
+    const { password } = parsed.data;
+    if (!password) return reauthRequired();
+    const limit = await checkAuthRateLimit('reauth', { ip: clientIp(req), email: user.email });
+    if (!limit.allowed) return rateLimitedResponse(limit.retryAfterSeconds);
+    if (!user.password) {
+      await burnPasswordCheck(password);
+      return reauthRequired();
+    }
+    const reservation = await reservePasswordAttempt(user.id);
+    if (!reservation.reserved || !(await verifyPassword(password, user.password))) {
+      if (!reservation.reserved) await burnPasswordCheck(password);
+      await recordAuthEvent({ event: 'LOGIN_FAILURE', req, userId: user.id, metadata: { reason: reservation.reserved ? 'wrong_password' : 'locked', stage: 'passkey_reauth' } });
+      if (reservation.reserved && reservation.lockedNow) await recordAuthEvent({ event: 'ACCOUNT_LOCKED', req, userId: user.id });
+      return reauthRequired();
+    }
+    await clearFailedAttempts(user.id);
+  }
 
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,

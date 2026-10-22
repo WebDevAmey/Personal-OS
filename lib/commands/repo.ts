@@ -179,7 +179,8 @@ export async function executedTargetsOfRun(userId: string, agentRunId: string): 
   const ids = new Set<string>();
   for (const r of rows) {
     for (const id of r.targetIds) ids.add(id);
-    const created = (r.result as { entity?: { type?: string; id?: string } } | null)?.entity;
+    // Executed proposals store `{ action: ExecutedAction }` (lib/commands/execute.ts).
+    const created = (r.result as { action?: { entity?: { type?: string; id?: string } } } | null)?.action?.entity;
     if (created?.type === 'task' && created.id) ids.add(created.id);
   }
   return [...ids];

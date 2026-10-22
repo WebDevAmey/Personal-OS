@@ -19,7 +19,7 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { buildSessionCookie, readCookie, sessionCookieName } from './cookies';
-import { signSessionToken, verifySessionToken } from './jwt';
+import { signSessionToken, verifySessionClaims } from './jwt';
 import { safeCallback } from './safe-callback';
 
 export interface Session {
@@ -36,16 +36,35 @@ async function tokenFromContext(req?: Request): Promise<string | null> {
 }
 
 export async function getSession(req?: Request): Promise<Session | null> {
+  const session = await getSessionWithAuthTime(req);
+  return session ? { userId: session.userId } : null;
+}
+
+/** A valid session plus the time its token was issued, i.e. when the user last signed in. */
+export async function getSessionWithAuthTime(req?: Request): Promise<(Session & { authenticatedAt: Date }) | null> {
   const token = await tokenFromContext(req);
   if (!token) return null;
 
-  const payload = await verifySessionToken(token);
+  const payload = await verifySessionClaims(token);
   if (!payload) return null;
 
   const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { sessionVersion: true } });
   if (!user || user.sessionVersion !== payload.sessionVersion) return null;
 
-  return { userId: payload.userId };
+  return { userId: payload.userId, authenticatedAt: new Date(payload.issuedAt * 1000) };
+}
+
+/**
+ * How recent a sign-in must be for credential changes such as adding a
+ * passkey (SEC-R-005). Tokens are only minted at sign-in, never refreshed, so
+ * the JWT `iat` is the sign-in time.
+ */
+export const RECENT_AUTH_MS = 15 * 60_000;
+
+export function isRecentAuth(authenticatedAt: Date, now: Date = new Date(), maxAgeMs: number = RECENT_AUTH_MS): boolean {
+  const age = now.getTime() - authenticatedAt.getTime();
+  // Allow small clock skew into the future, nothing more.
+  return age <= maxAgeMs && age >= -60_000;
 }
 
 export function unauthorizedResponse(): Response {

@@ -5,7 +5,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '@/lib/prisma';
 import { createSessionCookie, getSession } from '@/lib/auth/session';
-import { verifySessionToken } from '@/lib/auth/jwt';
 import { apiRequest, authEventNames, createUser } from '@/lib/auth/test-helpers';
 
 vi.mock('@simplewebauthn/server', async (importOriginal) => ({
@@ -41,7 +40,7 @@ beforeEach(() => {
 });
 
 describe('POST /api/auth/passkey/register/verify', () => {
-  it('stores the credential, consumes the challenge, rotates the session and records PASSKEY_ADDED', async () => {
+  it('stores the credential, consumes the challenge, keeps every session and records PASSKEY_ADDED', async () => {
     const { user, challenge, cookie } = await signedInWithChallenge();
     const credId = `cred-${randomUUID()}`;
     verified(credId);
@@ -54,11 +53,14 @@ describe('POST /api/auth/passkey/register/verify', () => {
     expect(cred).toMatchObject({ userId: user.id, name: 'My laptop', transports: ['internal'] });
     expect(await prisma.webAuthnChallenge.count({ where: { userId: user.id } })).toBe(0);
 
-    // T-SESS-09: adding a credential revokes older sessions; this browser gets a fresh one.
-    const oldReq = new Request('http://localhost:3000/', { headers: { cookie } });
-    expect(await getSession(oldReq)).toBeNull();
-    const fresh = res.headers.getSetCookie().find((c) => c.startsWith('session='))!;
-    expect(await verifySessionToken(fresh.split(';')[0].slice(8))).toEqual({ userId: user.id, sessionVersion: 1 });
+    // SEC-R-005: adding a passkey must not sign the owner out everywhere
+    // (that only helps an attacker who added one with a stolen session).
+    const otherDevice = (await createSessionCookie(user)).split(';')[0];
+    for (const c of [cookie, otherDevice]) {
+      expect(await getSession(new Request('http://localhost:3000/', { headers: { cookie: c } }))).toEqual({ userId: user.id });
+    }
+    expect(res.headers.getSetCookie()).toEqual([]);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).sessionVersion).toBe(0);
     expect(await authEventNames({ userId: user.id })).toEqual(['PASSKEY_ADDED']);
   });
 

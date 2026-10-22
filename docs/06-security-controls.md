@@ -58,7 +58,7 @@ Logging, V15 Secure Coding and Architecture). Chapter-level 5.0 references are u
 | T-SESS-06 | Long-lived token | 7-day sliding, 30-day absolute; `iss`/`aud` claims | — | `lib/auth/jwt.test.ts` | 4.0.3 V3.3.2; 5.0 V7, V9 | Not started (30-day fixed exp today) |
 | T-SESS-07 | Cookie theft over HTTP / script access | `HttpOnly; SameSite=Lax; Path=/; Secure` (prod) | — | `tests/security/cookie-flags.test.ts` | 4.0.3 V3.4.1, V3.4.2, V3.4.3, V3.4.5 | Implemented (no shared helper; flags duplicated in 5 routes) |
 | T-SESS-08 | Cookie tossing from sibling subdomain | `__Host-session` name; single `lib/auth/session-cookie.ts` builder | — | `tests/security/cookie-flags.test.ts` | 4.0.3 V3.4.4 | Not started |
-| T-SESS-09 | Session not refreshed on privilege change | Bump `sessionVersion` on password change, passkey add/remove, provider link/unlink, email change | — | `lib/auth/session-rotation.test.ts` | 4.0.3 V3.2.1, V3.3.3 | Not started |
+| T-SESS-09 | Session not refreshed on privilege change | Bump `sessionVersion` on password change, passkey removal, provider link/unlink, email change. Adding a passkey requires a recent sign-in instead and does not revoke sessions (SEC-R-005) | — | `lib/auth/session-rotation.test.ts` | 4.0.3 V3.2.1, V3.3.3 | Not started |
 | T-SESS-10 | Two identity systems (SEC-B-008) | ADR-002 cutover: delete `auth.ts`, `[...nextauth]`, Drizzle | — | `tests/security/route-auth-inventory.test.ts` (no import of `@/auth`) | 4.0.3 V1.4.4, V4.1.1 | Not started |
 
 ## 3. OAuth / OIDC (T-OAUTH)
