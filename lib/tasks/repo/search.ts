@@ -11,6 +11,7 @@ import { userTimeZone } from './internal';
 import { filterWhere, listTasks } from './views';
 
 const SEARCH_VECTOR = Prisma.raw(`to_tsvector('simple'::regconfig, coalesce("title", '') || ' ' || coalesce("description", ''))`);
+const TAG_VECTOR = Prisma.raw(`to_tsvector('simple'::regconfig, array_to_string(t."tags", ' '))`);
 const MAX_CANDIDATES = 500;
 
 /** Words → prefix tsquery "w1:* & w2:*" (only letters/digits survive, so it is injection-safe). */
@@ -78,11 +79,12 @@ export async function searchTasks(userId: string, opts: SearchOptions = {}): Pro
   const words = (opts.text!.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, 12);
 
   const ranked = await tx.$queryRaw<Ranked[]>`
-    SELECT t."id", (ts_rank(${SEARCH_VECTOR}, q) + CASE WHEN t."tags" && ${words}::text[] THEN 0.5 ELSE 0 END)::float8 AS "rank"
+    SELECT t."id", (ts_rank(${SEARCH_VECTOR}, q) + 0.5 * ts_rank(${TAG_VECTOR}, q)
+      + CASE WHEN t."tags" && ${words}::text[] THEN 0.5 ELSE 0 END)::float8 AS "rank"
     FROM "Task" t, to_tsquery('simple', ${query}) q
     WHERE t."userId" = ${userId}
       AND t."deletedAt" IS NULL
-      AND (${SEARCH_VECTOR} @@ q OR t."tags" && ${words}::text[])
+      AND (${SEARCH_VECTOR} @@ q OR ${TAG_VECTOR} @@ q)
     ORDER BY "rank" DESC
     LIMIT ${MAX_CANDIDATES}`;
   if (ranked.length === 0) return { items: [], nextCursor: null };

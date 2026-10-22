@@ -201,9 +201,10 @@ async function segmentsFor(tx: Tx, userId: string, view: TaskViewSpec, c: Clock,
         { field: 'dueAt', dir: 'asc' },
       ]);
       const base = { AND: [live, openWhere, notSnoozed(c.now)] };
+      // (`NOT overdue` alone would drop dueAt-null rows: SQL NOT of NULL is NULL.)
       return [
         { where: { AND: [base, overdueWhere(c)] }, sort: order, group: () => 'overdue' },
-        { where: { AND: [base, dueTodayWhere(c), { NOT: overdueWhere(c) }] }, sort: order, group: () => 'today' },
+        { where: { AND: [base, dueTodayWhere(c), { OR: [{ dueAt: null }, { NOT: overdueWhere(c) }] }] }, sort: order, group: () => 'today' },
       ];
     }
     case 'upcoming': {
