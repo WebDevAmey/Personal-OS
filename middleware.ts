@@ -33,15 +33,6 @@ const PUBLIC_API_PREFIXES = [
   '/api/auth/passkey/auth/',
   '/api/inngest',
   '/api/health',
-  // LEGACY Auth.js endpoints served by app/api/auth/[...nextauth] until the
-  // ADR-002 cutover deletes it (AUTH-010); remove these entries with it.
-  '/api/auth/signin',
-  '/api/auth/signout',
-  '/api/auth/callback',
-  '/api/auth/session',
-  '/api/auth/csrf',
-  '/api/auth/providers',
-  '/api/auth/error',
 ];
 
 // Server-to-server endpoints authenticated by their own signatures; browsers

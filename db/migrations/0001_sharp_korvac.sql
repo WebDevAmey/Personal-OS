@@ -1,1 +1,0 @@
-CREATE UNIQUE INDEX "integration_accounts_user_provider_idx" ON "integration_accounts" USING btree ("user_id","provider");
