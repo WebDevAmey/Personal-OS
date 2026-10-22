@@ -14,7 +14,6 @@ export const DEFAULT_CALLBACK = '/today';
 const MAX_LENGTH = 512;
 const BASE = 'http://callback.invalid';
 
-// eslint-disable-next-line no-control-regex
 const UNSAFE_CHARS = /[\u0000-\u001f\u007f\s\\]/;
 /** Percent-encoded `/`, `\` or `%` (double encoding) in the path part. */
 const ENCODED_SEPARATOR = /%(?:2f|5c|25)/i;
