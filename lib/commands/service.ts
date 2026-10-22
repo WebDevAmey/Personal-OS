@@ -238,7 +238,7 @@ export async function handleCommand(userId: string, body: unknown, deps: Command
   } catch (e) {
     const executed = state.outcomes.some((o) => o.kind === 'executed');
     const isModel = !(e instanceof NotFoundError) && isModelFailure(e);
-    logger.error('command.failed', { runId: run.id, errorName: (e as Error)?.name, model: isModel });
+    logger.error('command.failed', { runId: run.id, err: e, model: isModel });
     // No partial writes: anything not yet executed is withdrawn.
     await expireRunProposals(userId, run.id);
     state.outcomes = state.outcomes.filter((o) => o.kind === 'executed');
@@ -264,8 +264,9 @@ export async function handleCommand(userId: string, body: unknown, deps: Command
     intent: m.intent,
     latencyMs: m.latencyMs,
     steps: m.stepCount,
-    inputTokens: m.inputTokens,
-    outputTokens: m.outputTokens,
+    // Key names avoid the logger's redaction of /token/ keys.
+    usageIn: m.inputTokens,
+    usageOut: m.outputTokens,
     ...(response.kind === 'error' ? { errorCode: response.error.code } : {}),
     taintForced: response.kind === 'proposal' && response.proposal.reasons.includes('untrusted_source'),
   });

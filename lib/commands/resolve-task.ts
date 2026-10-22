@@ -26,6 +26,13 @@ export function cleanReference(reference: string): string {
     .trim();
 }
 
+/** "the thing I need to finish today", "what's due today" → the open tasks due today (docs/00 E12). */
+const DUE_TODAY = /^(?:(?:thing|stuff|one|item|task)s?\b.*\btoday|(?:what(?:'s| is)? )?due today|today(?:'s)? tasks?)$/;
+
+export function isDueTodayDescription(reference: string): boolean {
+  return DUE_TODAY.test(cleanReference(reference));
+}
+
 export function isPronoun(reference: string): boolean {
   const r = reference.toLowerCase().replace(/\s+/g, ' ').trim();
   return PRONOUNS.has(r) || PRONOUNS.has(cleanReference(r));
@@ -72,6 +79,15 @@ export async function resolveTaskReference(state: RunState, reference: string, s
     }
     const tasks = await openTasksForAntecedent(state);
     return tasks.length === 0 ? { match: 'none', reason: 'no_antecedent' } : { match: 'ambiguous', tasks, reason: 'no_antecedent' };
+  }
+
+  if (isDueTodayDescription(reference)) {
+    const due = (await listTasks(state.userId, { kind: 'today' }, { limit: MAX_CANDIDATES + 1, now: state.now, timeZone: state.prefs.timeZone })).items
+      .map((i) => i.task)
+      .filter((t) => (OPEN_STATUSES as readonly string[]).includes(t.status));
+    if (due.length === 0) return { match: 'none', reason: 'no_match' };
+    if (due.length === 1) return { match: 'unique', task: due[0], userDerived: true };
+    return { match: 'ambiguous', tasks: due.sort(byDueThenRecent).slice(0, MAX_CANDIDATES), reason: 'ambiguous' };
   }
 
   const page = await searchTasks(state.userId, {
