@@ -12,7 +12,7 @@ import { createGmailCapability } from '@/lib/integrations/gmail/client';
 import { getFreshAccessToken } from '@/lib/integrations/google/refresh-token';
 import { embed } from '@/lib/ai/embeddings';
 import { logger } from '@/lib/observability/logger';
-import { briefingModelId, getBriefingModel } from '@/lib/briefing/model';
+import { modelId as briefingModelId, getLanguageModel as getBriefingModel } from '@/lib/ai/provider';
 import {
   GENERATE_RETRIES,
   handleBriefingFailure,
