@@ -3,10 +3,12 @@
 // Returns a usable Google access token for a user, refreshing it when it is
 // missing an expiry, expired, or within five minutes of expiring.
 //
-// Tokens at rest (ADR-011): rows are read through `decryptToken`. Rows
-// written before encryption landed hold plaintext; those are used as-is and
-// become ciphertext on the next write (any refresh writes both tokens
-// encrypted).
+// Tokens at rest (ADR-011): rows are read through `decryptToken` with the
+// row's context (userId:provider:column), and every write seals as v2. A row
+// still holding plaintext (written before encryption landed, and missed by
+// scripts/encrypt-integration-tokens.ts) is never used: the user is asked to
+// reconnect (docs/03 §7.4). Revocation is the one exception, so the grant can
+// still be revoked at Google.
 //
 // Errors are typed and never contain token values:
 // - NoIntegrationAccountError: no google row for the user.
@@ -20,7 +22,7 @@
 // - TokenRefreshFailedError: anything else (malformed response, client
 //   misconfiguration, undecryptable stored token).
 import { prisma } from '@/lib/prisma';
-import { decryptToken, encryptToken, isEncryptedToken } from '@/lib/security/token-crypto';
+import { decryptToken, encryptToken, isEncryptedToken, tokenContext, type TokenColumn } from '@/lib/security/token-crypto';
 import { logger as defaultLogger, type Logger } from '@/lib/observability/logger';
 import {
   NeedsReconnectError,
@@ -63,9 +65,13 @@ function needsRefresh(expiresAt: Date | null): boolean {
   return expiresAt.getTime() - REFRESH_SAFETY_MARGIN_MS <= Date.now();
 }
 
-/** Decrypts a stored token; legacy plaintext rows are returned unchanged. */
-export function readStoredToken(value: string): string {
-  return isEncryptedToken(value) ? decryptToken(value) : value;
+/** Decrypts a stored Google token for `userId`. Throws on plaintext or a value sealed for another row. */
+export function readStoredToken(value: string, userId: string, column: TokenColumn): string {
+  return decryptToken(value, tokenContext(userId, 'google', column));
+}
+
+function sealToken(value: string, userId: string, column: TokenColumn): string {
+  return encryptToken(value, tokenContext(userId, 'google', column));
 }
 
 interface GoogleTokenResponse {
@@ -109,12 +115,18 @@ export async function getFreshAccessToken(userId: string, opts: TokenOptions = {
     throw new NoIntegrationAccountError(userId);
   }
 
+  if (!isEncryptedToken(account.accessToken) || (account.refreshToken && !isEncryptedToken(account.refreshToken))) {
+    log.warn('integration.google.needs_reconnect', { userId, reason: 'legacy_plaintext' });
+    await signalReconnect(userId, opts, log);
+    throw new NeedsReconnectError('google', 'legacy_plaintext', userId);
+  }
+
   let storedRefresh: string | null;
   try {
     if (!needsRefresh(account.expiresAt)) {
-      return readStoredToken(account.accessToken);
+      return readStoredToken(account.accessToken, userId, 'accessToken');
     }
-    storedRefresh = account.refreshToken ? readStoredToken(account.refreshToken) : null;
+    storedRefresh = account.refreshToken ? readStoredToken(account.refreshToken, userId, 'refreshToken') : null;
   } catch (err) {
     // Wrong/rotated TOKEN_ENCRYPTION_KEY or a tampered row. This is an
     // operator problem, so do not flag the user for reconnect.
@@ -198,15 +210,15 @@ export async function getFreshAccessToken(userId: string, opts: TokenOptions = {
   }
 
   // Google does not always rotate the refresh token: keep the existing one
-  // unless a new one was returned. Both are written encrypted, which also
-  // migrates legacy plaintext rows.
+  // unless a new one was returned. Both are written sealed as v2, which also
+  // moves v1 rows to the row-bound format.
   const newRefresh = typeof data.refresh_token === 'string' && data.refresh_token.length > 0 ? data.refresh_token : storedRefresh;
 
   await prisma.integrationAccount.update({
     where: { userId_provider: { userId, provider: 'google' } },
     data: {
-      accessToken: encryptToken(data.access_token),
-      refreshToken: encryptToken(newRefresh),
+      accessToken: sealToken(data.access_token, userId, 'accessToken'),
+      refreshToken: sealToken(newRefresh, userId, 'refreshToken'),
       expiresAt,
     },
   });
@@ -273,7 +285,9 @@ export async function revokeGoogleAccess(userId: string, opts: Pick<TokenOptions
 
   let token: string;
   try {
-    token = readStoredToken(account.refreshToken ?? account.accessToken);
+    const column: TokenColumn = account.refreshToken ? 'refreshToken' : 'accessToken';
+    const stored = account.refreshToken ?? account.accessToken;
+    token = isEncryptedToken(stored) ? readStoredToken(stored, userId, column) : stored;
   } catch (err) {
     log.error('integration.google.token_decrypt_failed', { userId, errorName: (err as Error)?.name });
     throw new TokenRefreshFailedError(userId, 'stored token could not be decrypted');

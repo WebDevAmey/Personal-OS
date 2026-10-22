@@ -202,7 +202,7 @@ model IntegrationAccount {
   provider          String
   providerAccountId String?
   accountEmail      String?
-  accessToken       String // ADR-011 ciphertext "v1:…"
+  accessToken       String // ADR-011 ciphertext "v2:…" (v1 still read)
   refreshToken      String? // same format
   scopes            String
   expiresAt         DateTime?

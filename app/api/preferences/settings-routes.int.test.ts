@@ -5,6 +5,7 @@ import { createSessionCookie } from '@/lib/auth/session';
 import { apiRequest } from '@/lib/auth/test-helpers';
 import { deleteUsers, makeUser, testPrisma } from '@/lib/test/factories';
 import type { User } from '@/lib/generated/prisma/client';
+import { encryptToken, tokenContext } from '@/lib/security/token-crypto';
 import { GET as projectsGET, POST as projectsPOST } from '@/app/api/projects/route';
 import { GET as projectGET, PATCH as projectPATCH, DELETE as projectDELETE } from '@/app/api/projects/[id]/route';
 import { GET as prefsGET, PATCH as prefsPATCH } from './route';
@@ -131,8 +132,8 @@ describe('integrations', () => {
         userId: alice.id,
         provider: 'google',
         accountEmail: 'alice@gmail.test',
-        accessToken: 'plain-legacy-token',
-        refreshToken: 'plain-legacy-refresh',
+        accessToken: encryptToken('access-for-test', tokenContext(alice.id, 'google', 'accessToken')),
+        refreshToken: encryptToken('refresh-for-test', tokenContext(alice.id, 'google', 'refreshToken')),
         scopes: 'openid email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly',
       },
     });

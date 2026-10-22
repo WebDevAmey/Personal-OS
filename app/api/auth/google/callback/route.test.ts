@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '@/lib/prisma';
-import { decryptToken, isEncryptedToken } from '@/lib/security/token-crypto';
+import { decryptToken, isEncryptedToken, tokenContext } from '@/lib/security/token-crypto';
 import { verifySessionToken } from '@/lib/auth/jwt';
 import { authEventNames, createUser, uniqueEmail } from '@/lib/auth/test-helpers';
 
@@ -59,8 +59,8 @@ describe('GET /api/auth/google/callback', () => {
     expect(isEncryptedToken(account.accessToken)).toBe(true);
     expect(isEncryptedToken(account.refreshToken!)).toBe(true);
     expect(account.accessToken).not.toContain('ya29');
-    expect(decryptToken(account.accessToken)).toBe('ya29.access-token-value');
-    expect(decryptToken(account.refreshToken!)).toBe('1//refresh-token-value');
+    expect(decryptToken(account.accessToken, tokenContext(user.id, 'google', 'accessToken'))).toBe('ya29.access-token-value');
+    expect(decryptToken(account.refreshToken!, tokenContext(user.id, 'google', 'refreshToken'))).toBe('1//refresh-token-value');
     expect(account.scopes).toBe('openid email https://www.googleapis.com/auth/gmail.readonly');
 
     const session = res.headers.getSetCookie().find((c) => c.startsWith('session='))!;
@@ -90,8 +90,8 @@ describe('GET /api/auth/google/callback', () => {
     await callback();
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
     const account = await prisma.integrationAccount.findUniqueOrThrow({ where: { userId_provider: { userId: user.id, provider: 'google' } } });
-    expect(decryptToken(account.accessToken)).toBe('ya29.second');
-    expect(decryptToken(account.refreshToken!)).toBe('1//refresh-token-value');
+    expect(decryptToken(account.accessToken, tokenContext(user.id, 'google', 'accessToken'))).toBe('ya29.second');
+    expect(decryptToken(account.refreshToken!, tokenContext(user.id, 'google', 'refreshToken'))).toBe('1//refresh-token-value');
   });
 
   it('falls back to the requested scope string when the token response omits scope', async () => {

@@ -53,7 +53,8 @@ export type ReconnectReason =
   | 'revoked'
   | 'no_refresh_token'
   | 'unauthorized'
-  | 'scope_missing';
+  | 'scope_missing'
+  | 'legacy_plaintext';
 
 /**
  * The stored grant can no longer be used: the user must reconnect Google.

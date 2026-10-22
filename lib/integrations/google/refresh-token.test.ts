@@ -1,8 +1,8 @@
 // @vitest-environment node
-import { randomBytes } from 'node:crypto';
+import { createCipheriv, randomBytes } from 'node:crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createLogger } from '@/lib/observability/logger';
-import { decryptToken, encryptToken, isEncryptedToken } from '@/lib/security/token-crypto';
+import { decryptToken, encryptToken, isEncryptedToken, tokenContext } from '@/lib/security/token-crypto';
 import { ProviderUnavailableError, RateLimitedError } from '../errors';
 import {
   NeedsReconnectError,
@@ -25,13 +25,16 @@ const ACCESS = 'ya29.access-token-value-that-must-never-leak';
 const REFRESH = '1//refresh-token-value-that-must-never-leak';
 const NEW_ACCESS = 'ya29.new-access-token-value-that-must-never-leak';
 
+const ACCESS_CTX = tokenContext('user-1', 'google', 'accessToken');
+const REFRESH_CTX = tokenContext('user-1', 'google', 'refreshToken');
+
 const originalFetch = global.fetch;
 let db: Mocked;
 let logLines: string[];
 let logger: ReturnType<typeof createLogger>;
 
 function row(overrides: Record<string, unknown> = {}) {
-  return { accessToken: encryptToken(ACCESS), refreshToken: encryptToken(REFRESH), expiresAt: new Date(Date.now() - 1000), scopes: 'gmail.readonly', ...overrides };
+  return { accessToken: encryptToken(ACCESS, ACCESS_CTX), refreshToken: encryptToken(REFRESH, REFRESH_CTX), expiresAt: new Date(Date.now() - 1000), scopes: 'gmail.readonly', ...overrides };
 }
 
 function okJson(body: unknown) {
@@ -78,9 +81,13 @@ describe('getFreshAccessToken', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('treats a legacy plaintext row transparently', async () => {
-    db.integrationAccount.findUnique.mockResolvedValue(row({ accessToken: 'still-fresh-plain', expiresAt: new Date(Date.now() + 60 * 60 * 1000) }));
-    await expect(getFreshAccessToken('user-1')).resolves.toBe('still-fresh-plain');
+  it('still reads a v1 row written before row binding', async () => {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', Buffer.from(process.env.TOKEN_ENCRYPTION_KEY!, 'base64'), iv);
+    const ct = Buffer.concat([cipher.update(ACCESS, 'utf8'), cipher.final()]);
+    const v1 = ['v1', iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), ct.toString('base64url')].join(':');
+    db.integrationAccount.findUnique.mockResolvedValue(row({ accessToken: v1, expiresAt: new Date(Date.now() + 60 * 60 * 1000) }));
+    await expect(getFreshAccessToken('user-1')).resolves.toBe(ACCESS);
   });
 
   it('refreshes inside the 5-minute safety margin', async () => {
@@ -103,28 +110,39 @@ describe('getFreshAccessToken', () => {
     const { data } = db.integrationAccount.update.mock.calls[0][0];
     expect(isEncryptedToken(data.accessToken)).toBe(true);
     expect(isEncryptedToken(data.refreshToken)).toBe(true);
-    expect(decryptToken(data.accessToken)).toBe(NEW_ACCESS);
-    expect(decryptToken(data.refreshToken)).toBe(REFRESH);
+    expect(decryptToken(data.accessToken, ACCESS_CTX)).toBe(NEW_ACCESS);
+    expect(decryptToken(data.refreshToken, REFRESH_CTX)).toBe(REFRESH);
     expect(data.expiresAt.getTime()).toBeGreaterThan(Date.now() + 3500 * 1000);
     expect(logLines.join('\n')).not.toContain(NEW_ACCESS);
     expect(logLines.join('\n')).not.toContain(REFRESH);
   });
 
-  it('re-encrypts a legacy plaintext row on the next write', async () => {
+  it('refuses a legacy plaintext row and asks the user to reconnect', async () => {
     db.integrationAccount.findUnique.mockResolvedValue(row({ accessToken: 'stale-plain', refreshToken: 'refresh-plain' }));
     const fetchMock = mockFetch(async () => okJson({ access_token: NEW_ACCESS, expires_in: 3600 }));
-    await getFreshAccessToken('user-1');
-    expect(((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as URLSearchParams).get('refresh_token')).toBe('refresh-plain');
-    const { data } = db.integrationAccount.update.mock.calls[0][0];
-    expect(decryptToken(data.refreshToken)).toBe('refresh-plain');
-    expect(data.refreshToken).not.toContain('refresh-plain');
+    const onNeedsReconnect = vi.fn();
+    const err = await caught(getFreshAccessToken('user-1', { onNeedsReconnect, logger }));
+    expect(err).toBeInstanceOf(NeedsReconnectError);
+    expect((err as NeedsReconnectError).reason).toBe('legacy_plaintext');
+    expect(onNeedsReconnect).toHaveBeenCalledWith('user-1');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logLines.join('\n')).not.toContain('refresh-plain');
+  });
+
+  it('refuses a token sealed for another user', async () => {
+    const foreign = encryptToken(ACCESS, tokenContext('user-2', 'google', 'accessToken'));
+    db.integrationAccount.findUnique.mockResolvedValue(row({ accessToken: foreign, expiresAt: new Date(Date.now() + 60 * 60 * 1000) }));
+    const err = await caught(getFreshAccessToken('user-1', { logger }));
+    expect(err).toBeInstanceOf(TokenRefreshFailedError);
+    expect(err).not.toBeInstanceOf(NeedsReconnectError);
+    assertNoSecrets(err);
   });
 
   it('persists a rotated refresh token when Google returns one', async () => {
     db.integrationAccount.findUnique.mockResolvedValue(row());
     mockFetch(async () => okJson({ access_token: NEW_ACCESS, expires_in: 3600, refresh_token: 'brand-new-refresh-token' }));
     await getFreshAccessToken('user-1');
-    expect(decryptToken(db.integrationAccount.update.mock.calls[0][0].data.refreshToken)).toBe('brand-new-refresh-token');
+    expect(decryptToken(db.integrationAccount.update.mock.calls[0][0].data.refreshToken, REFRESH_CTX)).toBe('brand-new-refresh-token');
   });
 
   it('throws NoIntegrationAccountError when no row exists', async () => {
@@ -229,7 +247,7 @@ describe('getFreshAccessToken', () => {
 
   it('throws TokenRefreshFailedError, without flagging reconnect, when the stored token cannot be decrypted', async () => {
     // Flip the first ciphertext character (a full 6 data bits) so GCM authentication fails.
-    const [v, iv, tag, ct] = encryptToken(ACCESS).split(':');
+    const [v, iv, tag, ct] = encryptToken(ACCESS, ACCESS_CTX).split(':');
     const tampered = [v, iv, tag, (ct[0] === 'A' ? 'B' : 'A') + ct.slice(1)].join(':');
     db.integrationAccount.findUnique.mockResolvedValue(row({ accessToken: tampered, expiresAt: new Date(Date.now() + 60 * 60 * 1000) }));
     const onNeedsReconnect = vi.fn();

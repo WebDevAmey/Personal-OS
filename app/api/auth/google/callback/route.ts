@@ -9,7 +9,7 @@ import { exchangeGoogleCode, SCOPES, verifyGoogleIdToken, type GoogleIdTokenClai
 import { clearOAuthCookies, readOAuthCallback } from '@/lib/auth/oauth-flow';
 import { resolveOAuthUser } from '@/lib/auth/oauth-account';
 import { createSessionCookie } from '@/lib/auth/session';
-import { encryptToken } from '@/lib/security/token-crypto';
+import { encryptToken, tokenContext } from '@/lib/security/token-crypto';
 import { prisma } from '@/lib/prisma';
 import { recordAuthEvent } from '@/lib/audit/auth-events';
 import { logger } from '@/lib/observability/logger';
@@ -69,8 +69,8 @@ export async function GET(req: Request) {
   // lives in lib/integrations/google/refresh-token.ts (WS-3).
   const scopes = tokens.scope ?? SCOPES;
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
-  const accessToken = encryptToken(tokens.access_token);
-  const refreshToken = tokens.refresh_token ? encryptToken(tokens.refresh_token) : undefined;
+  const accessToken = encryptToken(tokens.access_token, tokenContext(user.id, 'google', 'accessToken'));
+  const refreshToken = tokens.refresh_token ? encryptToken(tokens.refresh_token, tokenContext(user.id, 'google', 'refreshToken')) : undefined;
   await prisma.integrationAccount.upsert({
     where: { userId_provider: { userId: user.id, provider: 'google' } },
     // Google lets users decline individual scopes, so the granted list is
