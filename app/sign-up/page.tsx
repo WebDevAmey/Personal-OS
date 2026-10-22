@@ -86,9 +86,10 @@ export default function SignUpPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
-              minLength={8}
+              minLength={12}
+              maxLength={128}
             />
-            <p className="text-xs text-neutral-500">Must be at least 8 characters</p>
+            <p className="text-xs text-neutral-500">Must be at least 12 characters</p>
           </div>
 
           <Button type="submit" className="w-full" disabled={loading}>

@@ -9,10 +9,16 @@ import {
 
 describe('buildGithubAuthUrl', () => {
   it('requests read:user and user:email scopes', () => {
-    const url = new URL(buildGithubAuthUrl('state-123'));
+    const url = new URL(buildGithubAuthUrl('state-123', 'challenge-abc'));
     expect(url.searchParams.get('scope')).toBe('read:user user:email');
     expect(url.searchParams.get('state')).toBe('state-123');
     expect(url.hostname).toBe('github.com');
+  });
+
+  it('sends a PKCE S256 code challenge', () => {
+    const url = new URL(buildGithubAuthUrl('state-123', 'challenge-abc'));
+    expect(url.searchParams.get('code_challenge')).toBe('challenge-abc');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
   });
 });
 
@@ -28,17 +34,19 @@ describe('exchangeGithubCode', () => {
       json: async () => ({ access_token: 'gh-token' }),
     }) as unknown as typeof fetch;
 
-    const token = await exchangeGithubCode('code-123');
+    const token = await exchangeGithubCode('code-123', 'verifier-xyz');
     expect(token).toBe('gh-token');
     expect(global.fetch).toHaveBeenCalledWith(
       'https://github.com/login/oauth/access_token',
       expect.objectContaining({ method: 'POST' }),
     );
+    const init = (global.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(new URLSearchParams(init.body).get('code_verifier')).toBe('verifier-xyz');
   });
 
   it('throws when GitHub returns a non-2xx status', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401 }) as unknown as typeof fetch;
-    await expect(exchangeGithubCode('bad-code')).rejects.toThrow(/401/);
+    await expect(exchangeGithubCode('bad-code', 'v')).rejects.toThrow(/401/);
   });
 
   // Lesson 4: a malformed/incomplete token response must fail loudly here
@@ -46,7 +54,7 @@ describe('exchangeGithubCode', () => {
   // of the next fetch call.
   it('throws when the token response is missing access_token', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }) as unknown as typeof fetch;
-    await expect(exchangeGithubCode('code-123')).rejects.toThrow(/access_token/);
+    await expect(exchangeGithubCode('code-123', 'v')).rejects.toThrow(/access_token/);
   });
 });
 

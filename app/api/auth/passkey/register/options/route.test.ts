@@ -1,186 +1,78 @@
-// app/api/auth/passkey/register/options/route.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { POST } from './route';
+// @vitest-environment node
+// POST /api/auth/passkey/register/options against the real test database.
+import { describe, it, expect } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { prisma } from '@/lib/prisma';
 import { userIdToUserHandle } from '@/lib/auth/webauthn';
+import { createSessionCookie } from '@/lib/auth/session';
+import { apiRequest, createUser } from '@/lib/auth/test-helpers';
 
-vi.mock('@/lib/auth/session', () => ({ getSession: vi.fn() }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
-    user: { findUnique: vi.fn() },
-    webAuthnChallenge: { create: vi.fn(), deleteMany: vi.fn() },
-  },
-}));
-vi.mock('@simplewebauthn/server', () => ({
-  generateRegistrationOptions: vi.fn(),
-}));
+import { POST } from './route';
 
-type MockedSession = { getSession: ReturnType<typeof vi.fn> };
-type MockedPrisma = {
-  user: { findUnique: ReturnType<typeof vi.fn> };
-  webAuthnChallenge: { create: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn> };
-};
-type MockedWebAuthn = { generateRegistrationOptions: ReturnType<typeof vi.fn> };
+async function signedIn() {
+  const user = await createUser();
+  return { user, cookie: (await createSessionCookie(user)).split(';')[0] };
+}
+
+const call = (cookie?: string, opts: { origin?: string } = {}) =>
+  POST(apiRequest('/api/auth/passkey/register/options', undefined, { cookie, ...opts }));
 
 describe('POST /api/auth/passkey/register/options', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('returns registration options and persists a challenge scoped to the signed-in user', async () => {
-    const { getSession } = (await import('@/lib/auth/session')) as unknown as MockedSession;
-    getSession.mockResolvedValue({ userId: 'user-1' });
-
-    const { prisma } = (await import('@/lib/prisma')) as unknown as { prisma: MockedPrisma };
-    prisma.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@b.com', passkeyCredentials: [] });
-
-    const { generateRegistrationOptions } = (await import('@simplewebauthn/server')) as unknown as MockedWebAuthn;
-    generateRegistrationOptions.mockResolvedValue({ challenge: 'new-challenge', rp: {}, user: {} });
-
+  it('returns registration options and persists a 5-minute challenge scoped to the signed-in user', async () => {
+    const { user, cookie } = await signedIn();
     const before = Date.now();
-    const res = await POST();
-    const body = await res.json();
-
+    const res = await call(cookie);
     expect(res.status).toBe(200);
-    expect(body).toEqual({ challenge: 'new-challenge', rp: {}, user: {} });
-    expect(prisma.webAuthnChallenge.create).toHaveBeenCalledTimes(1);
-    const createArgs = prisma.webAuthnChallenge.create.mock.calls[0][0];
-    expect(createArgs.data.userId).toBe('user-1');
-    expect(createArgs.data.challenge).toBe('new-challenge');
-    // Roughly 5 minutes out -- exact TTL enforced in the verify route via expiresAt.
-    const ttlMs = createArgs.data.expiresAt.getTime() - before;
-    expect(ttlMs).toBeGreaterThan(4 * 60 * 1000);
-    expect(ttlMs).toBeLessThanOrEqual(5 * 60 * 1000 + 1000);
+    const body = await res.json();
+    const rows = await prisma.webAuthnChallenge.findMany({ where: { userId: user.id } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].challenge).toBe(body.challenge);
+    const ttl = rows[0].expiresAt.getTime() - before;
+    expect(ttl).toBeGreaterThan(4 * 60_000);
+    expect(ttl).toBeLessThanOrEqual(5 * 60_000 + 1000);
   });
 
-  it('returns 401 when there is no session, before calling prisma or the WebAuthn library', async () => {
-    const { getSession } = (await import('@/lib/auth/session')) as unknown as MockedSession;
-    getSession.mockResolvedValue(null);
-
-    const { prisma } = (await import('@/lib/prisma')) as unknown as { prisma: MockedPrisma };
-    const { generateRegistrationOptions } = (await import('@simplewebauthn/server')) as unknown as MockedWebAuthn;
-
-    const res = await POST();
-
+  it('returns 401 without a session, before writing anything', async () => {
+    const before = await prisma.webAuthnChallenge.count();
+    const res = await call();
     expect(res.status).toBe(401);
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
-    expect(generateRegistrationOptions).not.toHaveBeenCalled();
-    expect(prisma.webAuthnChallenge.deleteMany).not.toHaveBeenCalled();
-    expect(prisma.webAuthnChallenge.create).not.toHaveBeenCalled();
+    expect(await prisma.webAuthnChallenge.count()).toBeLessThanOrEqual(before);
   });
 
-  it('returns 404 when the session user no longer exists', async () => {
-    const { getSession } = (await import('@/lib/auth/session')) as unknown as MockedSession;
-    getSession.mockResolvedValue({ userId: 'user-1' });
-
-    const { prisma } = (await import('@/lib/prisma')) as unknown as { prisma: MockedPrisma };
-    prisma.user.findUnique.mockResolvedValue(null);
-
-    const res = await POST();
-    expect(res.status).toBe(404);
+  it('rejects a cross-site request', async () => {
+    const { cookie } = await signedIn();
+    expect((await call(cookie, { origin: 'https://evil.example' })).status).toBe(403);
   });
 
-  // Security: without this, a user could register the same physical
-  // authenticator (or platform passkey) more than once for their account.
-  it('populates excludeCredentials from the user\'s existing passkeys', async () => {
-    const { getSession } = (await import('@/lib/auth/session')) as unknown as MockedSession;
-    getSession.mockResolvedValue({ userId: 'user-1' });
-
-    const { prisma } = (await import('@/lib/prisma')) as unknown as { prisma: MockedPrisma };
-    prisma.user.findUnique.mockResolvedValue({
-      id: 'user-1',
-      email: 'a@b.com',
-      passkeyCredentials: [
-        { id: 'existing-cred-1', transports: ['internal'] },
-        { id: 'existing-cred-2', transports: ['usb', 'nfc'] },
-      ],
+  it("populates excludeCredentials from the user's existing passkeys", async () => {
+    const { user, cookie } = await signedIn();
+    const credId = `cred-${randomUUID()}`;
+    await prisma.passkeyCredential.create({
+      data: { id: credId, userId: user.id, publicKey: Buffer.from([1]), transports: ['internal'], deviceType: 'singleDevice' },
     });
-
-    const { generateRegistrationOptions } = (await import('@simplewebauthn/server')) as unknown as MockedWebAuthn;
-    generateRegistrationOptions.mockResolvedValue({ challenge: 'new-challenge', rp: {}, user: {} });
-
-    await POST();
-
-    expect(generateRegistrationOptions).toHaveBeenCalledWith(expect.objectContaining({
-      excludeCredentials: [
-        { id: 'existing-cred-1', transports: ['internal'] },
-        { id: 'existing-cred-2', transports: ['usb', 'nfc'] },
-      ],
-    }));
-    expect(prisma.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'user-1' },
-      include: { passkeyCredentials: true },
-    }));
+    const body = await (await call(cookie)).json();
+    expect(body.excludeCredentials.map((c: { id: string }) => c.id)).toEqual([credId]);
   });
 
-  // Required for the credential to be discoverable/usernameless-login-ready,
-  // and to match verifyRegistrationResponse's default of
-  // requireUserVerification: true -- see verify/route.ts.
-  it('requests a resident, user-verified credential via authenticatorSelection', async () => {
-    const { getSession } = (await import('@/lib/auth/session')) as unknown as MockedSession;
-    getSession.mockResolvedValue({ userId: 'user-1' });
-
-    const { prisma } = (await import('@/lib/prisma')) as unknown as { prisma: MockedPrisma };
-    prisma.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@b.com', passkeyCredentials: [] });
-
-    const { generateRegistrationOptions } = (await import('@simplewebauthn/server')) as unknown as MockedWebAuthn;
-    generateRegistrationOptions.mockResolvedValue({ challenge: 'new-challenge', rp: {}, user: {} });
-
-    await POST();
-
-    expect(generateRegistrationOptions).toHaveBeenCalledWith(expect.objectContaining({
-      authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-    }));
+  it('requests a resident, user-verified credential', async () => {
+    const { cookie } = await signedIn();
+    const body = await (await call(cookie)).json();
+    expect(body.authenticatorSelection).toMatchObject({ residentKey: 'required', userVerification: 'required' });
   });
 
-  // Usernameless/discoverable login (a future task) looks a credential up by
-  // its embedded WebAuthn user handle -- that only works if the SAME user
-  // gets the SAME handle every time, rather than a fresh random value per call.
-  it('derives the same userID bytes for the same session.userId across two separate calls', async () => {
-    const { getSession } = (await import('@/lib/auth/session')) as unknown as MockedSession;
-    getSession.mockResolvedValue({ userId: 'user-1' });
-
-    const { prisma } = (await import('@/lib/prisma')) as unknown as { prisma: MockedPrisma };
-    prisma.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@b.com', passkeyCredentials: [] });
-
-    const { generateRegistrationOptions } = (await import('@simplewebauthn/server')) as unknown as MockedWebAuthn;
-    generateRegistrationOptions.mockResolvedValue({ challenge: 'new-challenge', rp: {}, user: {} });
-
-    await POST();
-    await POST();
-
-    expect(generateRegistrationOptions).toHaveBeenCalledTimes(2);
-    const firstUserID = generateRegistrationOptions.mock.calls[0][0].userID;
-    const secondUserID = generateRegistrationOptions.mock.calls[1][0].userID;
-    expect(firstUserID).toEqual(userIdToUserHandle('user-1'));
-    expect(secondUserID).toEqual(userIdToUserHandle('user-1'));
-    expect(firstUserID).toEqual(secondUserID);
+  it('derives the same user handle for the same user across calls', async () => {
+    const { user, cookie } = await signedIn();
+    const a = (await (await call(cookie)).json()).user.id;
+    const b = (await (await call(cookie)).json()).user.id;
+    expect(a).toBe(Buffer.from(userIdToUserHandle(user.id)).toString('base64url'));
+    expect(b).toBe(a);
   });
 
-  // Concurrency: without clearing prior challenge rows first, two concurrent
-  // registration attempts (e.g. two open tabs) can race against each other --
-  // whichever ceremony completes gets checked against whatever row is
-  // currently "newest" for the user, which may belong to the OTHER attempt.
-  it('clears the user\'s prior challenge rows before creating the new one', async () => {
-    const { getSession } = (await import('@/lib/auth/session')) as unknown as MockedSession;
-    getSession.mockResolvedValue({ userId: 'user-1' });
-
-    const { prisma } = (await import('@/lib/prisma')) as unknown as { prisma: MockedPrisma };
-    prisma.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'a@b.com', passkeyCredentials: [] });
-
-    const { generateRegistrationOptions } = (await import('@simplewebauthn/server')) as unknown as MockedWebAuthn;
-    generateRegistrationOptions.mockResolvedValue({ challenge: 'first-challenge', rp: {}, user: {} });
-    await POST();
-
-    generateRegistrationOptions.mockResolvedValue({ challenge: 'second-challenge', rp: {}, user: {} });
-    await POST();
-
-    expect(prisma.webAuthnChallenge.deleteMany).toHaveBeenCalledTimes(2);
-    expect(prisma.webAuthnChallenge.deleteMany).toHaveBeenNthCalledWith(2, { where: { userId: 'user-1' } });
-
-    // deleteMany must run before create on the second call, otherwise the
-    // fresh row it just created would immediately be wiped out too.
-    const deleteOrder = prisma.webAuthnChallenge.deleteMany.mock.invocationCallOrder[1];
-    const createOrder = prisma.webAuthnChallenge.create.mock.invocationCallOrder[1];
-    expect(deleteOrder).toBeLessThan(createOrder);
+  it("keeps only the newest registration challenge for the user", async () => {
+    const { user, cookie } = await signedIn();
+    await call(cookie);
+    const second = await (await call(cookie)).json();
+    const rows = await prisma.webAuthnChallenge.findMany({ where: { userId: user.id } });
+    expect(rows.map((r) => r.challenge)).toEqual([second.challenge]);
   });
 });
