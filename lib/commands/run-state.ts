@@ -65,6 +65,8 @@ export interface RunState {
   antecedentTaskIds: string[];
   sources: AnswerSource[];
   toolNames: string[];
+  /** Ambiguous resolve_task results not yet used by a propose call (set handle → candidates). */
+  unresolved: Map<string, { reference: string; taskIds: string[]; reason: 'ambiguous' | 'no_antecedent' }>;
 }
 
 export function issueHandle(state: RunState, prefix: HandlePrefix, key: string, entry: HandleEntry): string {

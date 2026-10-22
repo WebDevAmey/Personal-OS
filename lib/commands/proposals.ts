@@ -24,7 +24,7 @@ import {
 } from '@/lib/tasks/repo';
 import { floatingDate } from '@/lib/time';
 import { executeProposal } from './execute';
-import { dateLabel, instantLabel, resolveDatePhrase, resolveDateRange, type DateNote, type Purpose } from './dates';
+import { instantLabel, resolveDatePhrase, resolveDateRange, type DateNote, type Purpose } from './dates';
 import { decide } from './policy';
 import { PROPOSAL_TTL_MS, createProposal } from './repo';
 import { classifyRisk, KIND_TOOL, type ProposalKind } from './risk';
@@ -691,4 +691,18 @@ export async function processDraft(state: RunState, draft: Draft): Promise<Propo
   }
   state.outcomes.push({ kind: 'executed', proposalId: row.id, action: result.action });
   return { status: 'executed', proposalId: row.id, summary: prepared.summary };
+}
+
+/**
+ * The model resolved an ambiguous reference but never proposed anything with
+ * it: ask which task was meant. Picking one re-runs the command with that
+ * reference pinned (docs/04 §8.1).
+ */
+export async function clarifyUnresolved(state: RunState): Promise<boolean> {
+  const first = state.unresolved.entries().next();
+  if (first.done) return false;
+  const [, u] = first.value;
+  const draft: Draft = { kind: 'resolve', fields: {}, dates: {}, tainted: false, taintSources: [], reference: u.reference, originalInput: state.input };
+  await clarifyTask(state, draft, u.taskIds, u.reason);
+  return true;
 }
