@@ -1,6 +1,6 @@
 import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@/components/ui/accordion";
 import { Reveal } from "./motion";
-import { SectionHeading } from "./section-heading";
+
 
 /* Answers match docs/00-product-spec.md; nothing here may claim a non-goal. */
 const ITEMS = [
@@ -40,13 +40,18 @@ const ITEMS = [
 
 export function Faq() {
   return (
-    <section id="faq" aria-labelledby="faq-title" className="scroll-mt-16 border-t border-border">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-6 sm:py-24 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-16">
+    <section id="faq" aria-labelledby="faq-title" className="scroll-mt-20">
+      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-6 sm:py-28 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-16">
         <Reveal>
-          <SectionHeading id="faq-title" eyebrow="FAQ" title="Questions" />
+          <p className="font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase">FAQ</p>
+          <h2 id="faq-title" className="mt-3 font-serif text-[clamp(2.5rem,5vw,3.75rem)] leading-[1] tracking-[-0.02em] text-foreground">
+            Questions,
+            <br />
+            <em className="italic text-muted-foreground">answered.</em>
+          </h2>
         </Reveal>
         <Reveal>
-          <Accordion className="border-t border-border" hiddenUntilFound>
+          <Accordion className="rounded-3xl bg-surface px-5 shadow-card sm:px-7" hiddenUntilFound>
             {ITEMS.map((item) => (
               <AccordionItem key={item.q} value={item.q}>
                 <AccordionTrigger>{item.q}</AccordionTrigger>
