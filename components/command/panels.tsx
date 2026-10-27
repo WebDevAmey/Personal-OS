@@ -70,7 +70,6 @@ export function ClarificationPanel({
               <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-lg bg-surface-2 font-mono text-meta text-muted-foreground">
                 {i + 1}
               </span>
-              <span className="sr-only">Option {i + 1}: </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-body font-medium text-foreground">{o.label}</span>
                 {o.detail && <span className="block truncate text-body-sm text-muted-foreground">{o.detail}</span>}
