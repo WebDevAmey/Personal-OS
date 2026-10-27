@@ -409,21 +409,47 @@ Tailwind 4 default `--spacing: 0.25rem`. Use only these steps in app code:
 
 ## 7. Radii, borders, shadows
 
+Revised 2026-10-27 (design board pass). The 8 px ceiling and the "cards have
+no shadow" rule are retired: the app now sits on a light grey canvas and
+content lives on white cards lifted by a soft shadow with a 1 px ring built
+into it, instead of a border.
+
 | Element | Radius | Border | Shadow |
 |---|---|---|---|
-| Chip / badge / kbd / checkbox | `rounded-sm` (4) | 1 px `--border` or none | none |
-| Button / input / select trigger | `rounded-md` (5) | input: 1 px `--border-strong` | none |
-| Card / list group / popover / menu | `rounded-lg` (6) | 1 px `--border` | popover/menu only: `--shadow-popover` |
-| Dialog / command palette / sheet | `rounded-xl` (8) | 1 px `--border` | `--shadow-overlay` |
-| Avatar, status dot | `rounded-full` | — | — |
+| Chip / badge / kbd / checkbox | `rounded-sm` (4) | none | none |
+| Button / input / select trigger / nav item | `rounded-lg` (8) | input: 1 px `--border` | none |
+| Card / list group / panel | `rounded-xl` (12) | none | `shadow-card`, `shadow-card-hover` on hover |
+| Menu / popover / toolbar | `rounded-xl` (12) | none | `shadow-popover` |
+| Dialog / command palette / auth card | `rounded-2xl` (16) | none | `shadow-popover` or `shadow-overlay` |
+| Landing tiles and promise cards | `rounded-3xl` (24) to `rounded-4xl` (32) | none | `shadow-card` |
+| Pills, avatars, status dots | `rounded-full` | none | none |
 
-Rules: never exceed 8 px in the app (`--radius-2xl…4xl` are clamped to 8 px so
-generated components cannot drift). Cards have no shadow; elevation is reserved
-for things floating above content (popovers, menus, dialogs, palette, toasts).
-Prefer one rule between sections over boxing sections. Landing figure cards
-follow Anatomy's plate style (thin rule, square-ish), max 8 px.
+Tokens (`app/globals.css`):
 
----
+- `--canvas` (`#f7f7f8` light, `#0b0b0d` dark) is the page background;
+  `--surface` is the card; `--surface-2` is a tinted well inside a card.
+- `--elevation-card` = ring + 1 px contact shadow + soft 8 px falloff. In dark
+  mode it is just the 1 px `--border` ring, since shadows vanish on black.
+- Radii scale off `--radius: 0.5rem`: sm 0.5×, md 0.75×, lg 1×, xl 1.5×,
+  2xl 2×, 3xl 3×, 4xl 4×.
+
+Rules: nested corners stay concentric (inner radius = outer radius − padding).
+No borders around cards; use a divider only between rows inside one card.
+
+### 7.1 Display type and motion (2026-10-27)
+
+- Page titles, auth titles and landing headings use Instrument Serif
+  (`font-serif`, 400, italic for the emphasised half of a heading).
+  Body and UI text stay on the sans.
+- `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`. UI transitions run
+  150–200 ms. Pressable things scale to 0.97 on `:active`.
+- Things enter by rising 8 px, fading and unblurring 4 px. Nothing animates
+  in from `scale(0)`. Popovers grow from `var(--transform-origin)`.
+- Looping landing demos only run while on screen; with reduced motion they
+  render their final frame.
+- Confirmations borrow the decision-tree pattern: options hang off a rail
+  with numbered chips, risk tiles are tinted by risk level, and the confirm
+  button is the solid foreground pill (danger colour stays for destructive).
 
 ## 8. App shell
 
