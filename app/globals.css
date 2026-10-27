@@ -19,6 +19,7 @@
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
   --font-heading: var(--font-sans);
+  --font-serif: var(--font-instrument-serif), ui-serif, Georgia, "Times New Roman", serif;
 
   /* type scale (§4.2) */
   --text-display: clamp(2.5rem, 5.5vw, 3.5rem);
@@ -105,21 +106,26 @@
   --color-priority-medium: var(--priority-medium);
   --color-priority-low: var(--priority-low);
 
-  /* radii (base 6px, §7). Nothing larger than 8px exists. */
-  --radius-sm: calc(var(--radius) * 0.667);
-  --radius-md: calc(var(--radius) * 0.833);
+  /* radii (base 8px, §7). Controls stay at 6–8px; cards 12px; landing
+     tiles and windows 16–24px. Nested surfaces use the outer radius minus
+     the padding between them (concentric corners). */
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.333);
-  --radius-2xl: calc(var(--radius) * 1.333);
-  --radius-3xl: calc(var(--radius) * 1.333);
-  --radius-4xl: calc(var(--radius) * 1.333);
+  --radius-xl: calc(var(--radius) * 1.5);
+  --radius-2xl: calc(var(--radius) * 2);
+  --radius-3xl: calc(var(--radius) * 3);
+  --radius-4xl: calc(var(--radius) * 4);
 
   /* elevation (§7): only for things floating above content */
   --shadow-popover: var(--elevation-popover);
   --shadow-overlay: var(--elevation-overlay);
+  --shadow-card: var(--elevation-card);
+  --shadow-card-hover: var(--elevation-card-hover);
+  --color-canvas: var(--canvas);
 
   /* motion (§10.1) */
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
@@ -127,7 +133,7 @@
 
 :root {
   color-scheme: light;
-  --radius: 0.375rem;
+  --radius: 0.5rem;
 
   /* layout (§6) */
   --sidebar-w: 240px;
@@ -144,9 +150,10 @@
   --dur-base: 180ms;
   --dur-slow: 240ms;
 
-  --background: #ffffff;
+  --canvas: #f7f7f8;
+  --background: var(--canvas);
   --surface: #ffffff;
-  --surface-2: #f5f5f4;
+  --surface-2: #f1f1f2;
   --foreground: #18181b;
   --muted-foreground: #5b5b63;
   --subtle-foreground: #67676f;
@@ -199,8 +206,10 @@
   --chart-4: #b4b4bb;
   --chart-5: #d4d4d8;
 
-  --elevation-popover: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px -8px rgb(0 0 0 / 0.16);
-  --elevation-overlay: 0 2px 4px rgb(0 0 0 / 0.06), 0 24px 48px -12px rgb(0 0 0 / 0.24);
+  --elevation-card: 0 0 0 1px rgb(24 24 27 / 0.07), 0 1px 2px rgb(24 24 27 / 0.04), 0 2px 8px -4px rgb(24 24 27 / 0.05);
+  --elevation-card-hover: 0 0 0 1px rgb(24 24 27 / 0.1), 0 2px 4px rgb(24 24 27 / 0.05), 0 8px 20px -8px rgb(24 24 27 / 0.12);
+  --elevation-popover: 0 0 0 1px rgb(24 24 27 / 0.08), 0 2px 4px rgb(24 24 27 / 0.04), 0 12px 32px -12px rgb(24 24 27 / 0.2);
+  --elevation-overlay: 0 0 0 1px rgb(24 24 27 / 0.08), 0 4px 8px rgb(24 24 27 / 0.04), 0 24px 56px -16px rgb(24 24 27 / 0.28);
 }
 
 /*
@@ -211,7 +220,8 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --background: #0c0c0e;
+    --canvas: #0b0b0d;
+    --background: var(--canvas);
     --surface: #141417;
     --surface-2: #1c1c20;
     --foreground: #ededf0;
@@ -234,6 +244,8 @@
     --priority-low: #a1a1aa;
     --sidebar: #111114;
     --sidebar-accent: #222227;
+    --elevation-card: 0 0 0 1px var(--border);
+    --elevation-card-hover: 0 0 0 1px var(--border-strong), 0 8px 24px -12px rgb(0 0 0 / 0.6);
     --elevation-popover: 0 0 0 1px var(--border), 0 12px 32px -8px rgb(0 0 0 / 0.6);
     --elevation-overlay: 0 0 0 1px var(--border), 0 24px 64px -12px rgb(0 0 0 / 0.7);
   }
@@ -242,7 +254,8 @@
 :root[data-theme="dark"],
 :root.dark {
   color-scheme: dark;
-  --background: #0c0c0e;
+  --canvas: #0b0b0d;
+  --background: var(--canvas);
   --surface: #141417;
   --surface-2: #1c1c20;
   --foreground: #ededf0;
@@ -265,6 +278,8 @@
   --priority-low: #a1a1aa;
   --sidebar: #111114;
   --sidebar-accent: #222227;
+  --elevation-card: 0 0 0 1px var(--border);
+  --elevation-card-hover: 0 0 0 1px var(--border-strong), 0 8px 24px -12px rgb(0 0 0 / 0.6);
   --elevation-popover: 0 0 0 1px var(--border), 0 12px 32px -8px rgb(0 0 0 / 0.6);
   --elevation-overlay: 0 0 0 1px var(--border), 0 24px 64px -12px rgb(0 0 0 / 0.7);
 }
@@ -283,6 +298,12 @@
   }
   :where(time, .tabular, td) {
     font-variant-numeric: tabular-nums;
+  }
+  :where(h1, h2, h3) {
+    text-wrap: balance;
+  }
+  :where(p) {
+    text-wrap: pretty;
   }
   ::selection {
     background: color-mix(in oklab, var(--brand) 22%, transparent);
