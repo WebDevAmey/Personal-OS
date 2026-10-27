@@ -148,14 +148,14 @@ function Frame({ counts, displayName, children }: { counts: NavCounts; displayNa
       >
         Skip to content
       </a>
-      <aside className="sticky top-0 hidden h-dvh w-[var(--sidebar-w)] shrink-0 flex-col border-r border-border bg-surface md:flex">
+      <aside className="sticky top-0 hidden h-dvh w-[var(--sidebar-w)] shrink-0 flex-col bg-canvas md:flex">
         <SidebarContent counts={counts} pathname={pathname} />
       </aside>
 
       <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
         <Dialog.Portal>
           <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/30 transition-opacity duration-180 data-ending-style:opacity-0 data-starting-style:opacity-0 md:hidden" />
-          <Dialog.Popup className="fixed inset-y-0 left-0 z-40 flex w-[min(280px,85vw)] flex-col border-r border-border bg-surface shadow-overlay outline-none transition-transform duration-240 data-ending-style:-translate-x-full data-starting-style:-translate-x-full md:hidden">
+          <Dialog.Popup className="fixed inset-y-0 left-0 z-40 flex w-[min(280px,85vw)] flex-col bg-canvas shadow-overlay outline-none transition-transform duration-240 ease-[var(--ease-drawer)] data-ending-style:-translate-x-full data-starting-style:-translate-x-full md:hidden">
             <Dialog.Title className="sr-only">Navigation</Dialog.Title>
             <Dialog.Close className="absolute top-2.5 right-2 grid size-8 place-items-center rounded-md text-subtle-foreground hover:bg-surface-2" aria-label="Close navigation">
               <X aria-hidden className="size-4" />
@@ -166,7 +166,7 @@ function Frame({ counts, displayName, children }: { counts: NavCounts; displayNa
       </Dialog.Root>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-[var(--topbar-h)] shrink-0 items-center gap-2 border-b border-border bg-background/90 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/75 sm:px-4">
+        <header className="sticky top-0 z-30 flex h-[var(--topbar-h)] shrink-0 items-center gap-2 bg-canvas/90 px-3 backdrop-blur-md supports-[backdrop-filter]:bg-canvas/75 sm:px-4">
           <button
             type="button"
             className="grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-surface-2 md:hidden"
@@ -187,7 +187,7 @@ function Frame({ counts, displayName, children }: { counts: NavCounts; displayNa
             <button
               type="button"
               onClick={() => setCaptureOpen(true)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-2.5 text-body font-medium text-brand-foreground hover:bg-brand/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-foreground px-3 text-body font-medium text-background transition-[scale,opacity] duration-150 ease-out hover:opacity-90 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               aria-keyshortcuts="C"
             >
               <Plus aria-hidden className="size-4" />
@@ -217,9 +217,12 @@ function SidebarContent({ counts, pathname }: { counts: NavCounts; pathname: str
     <>
       <div className="flex h-[var(--topbar-h)] shrink-0 items-center gap-2 px-4">
         <Link href="/today" className="flex items-center gap-2 rounded-md text-heading-sm text-foreground focus-visible:outline-2 focus-visible:outline-ring">
-          <span aria-hidden className="grid size-6 place-items-center rounded-md bg-foreground text-[0.6875rem] font-semibold text-background">
-            OS
-          </span>
+          <svg viewBox="0 0 20 20" className="size-5" aria-hidden focusable="false">
+            <rect x="0.5" y="0.5" width="19" height="19" rx="5" className="fill-foreground" />
+            <rect x="5" y="5.5" width="10" height="1.8" rx="0.9" className="fill-background" />
+            <rect x="5" y="9.1" width="7" height="1.8" rx="0.9" className="fill-background" />
+            <rect x="5" y="12.7" width="4" height="1.8" rx="0.9" className="fill-background" />
+          </svg>
           Personal OS
         </Link>
       </div>
@@ -249,8 +252,8 @@ function SidebarContent({ counts, pathname }: { counts: NavCounts; pathname: str
                       href={href}
                       aria-current={active ? 'page' : undefined}
                       className={cn(
-                        'flex h-8 items-center gap-2 rounded-md px-2 text-body text-muted-foreground hover:bg-surface-2 hover:text-foreground',
-                        active && 'bg-surface-2 font-medium text-foreground',
+                        'flex h-8 items-center gap-2 rounded-lg px-2 text-body text-muted-foreground transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-foreground',
+                        active && 'bg-surface font-medium text-foreground shadow-card hover:bg-surface',
                       )}
                     >
                       <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: projectColor(p.color) }} />
@@ -279,8 +282,8 @@ function NavLink({ item, active, count }: { item: (typeof NAV_ITEMS)[number]; ac
         href={item.href}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'flex h-8 items-center gap-2.5 rounded-md px-2 text-body text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
-          active && 'bg-surface-2 font-medium text-foreground',
+          'flex h-8 items-center gap-2.5 rounded-lg px-2 text-body text-muted-foreground transition-colors duration-150 ease-out hover:bg-surface-2 hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
+          active && 'bg-surface font-medium text-foreground shadow-card hover:bg-surface',
         )}
       >
         <Icon aria-hidden className={cn('size-4 shrink-0', active ? 'text-foreground' : 'text-subtle-foreground')} />
@@ -305,7 +308,7 @@ function CommandTrigger() {
       onClick={() => palette.setOpen(true)}
       aria-keyshortcuts={isMac ? 'Meta+K' : 'Control+K'}
       aria-haspopup="dialog"
-      className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-left text-body text-subtle-foreground hover:border-border-strong hover:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring sm:max-w-[420px]"
+      className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-surface px-2.5 text-left text-body text-subtle-foreground shadow-card transition-shadow duration-150 ease-out hover:text-muted-foreground hover:shadow-card-hover focus-visible:outline-2 focus-visible:outline-ring sm:max-w-[420px]"
     >
       <Search aria-hidden className="size-4 shrink-0" />
       <span className="min-w-0 flex-1 truncate">
@@ -369,7 +372,7 @@ function AccountMenu({ email, displayName, onShortcuts }: { email: string; displ
         </Menu.Trigger>
         <Menu.Portal>
           <Menu.Positioner sideOffset={6} align="end" className="z-50">
-            <Menu.Popup className="min-w-56 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover transition-[opacity,transform] duration-120 data-ending-style:scale-98 data-ending-style:opacity-0 data-starting-style:scale-98 data-starting-style:opacity-0">
+            <Menu.Popup className="min-w-56 origin-[var(--transform-origin)] rounded-xl bg-popover p-1 text-popover-foreground shadow-popover transition-[opacity,transform] duration-150 ease-out data-ending-style:scale-98 data-ending-style:opacity-0 data-starting-style:scale-98 data-starting-style:opacity-0">
               <div className="px-2 py-1.5">
                 {displayName && <p className="truncate text-body font-medium text-foreground">{displayName}</p>}
                 <p className="truncate text-meta text-subtle-foreground">{email}</p>
