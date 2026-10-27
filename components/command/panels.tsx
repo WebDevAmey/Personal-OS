@@ -42,9 +42,11 @@ export function ClarificationPanel({
 }) {
   const options = response.options.slice(0, 5);
   return (
-    <section aria-labelledby="pal-clar-q" className="m-2 rounded-lg bg-brand-subtle p-3">
-      <div className="flex items-start gap-2">
-        <CircleHelp aria-hidden className="mt-0.5 size-4 shrink-0 text-brand" />
+    <section aria-labelledby="pal-clar-q" className="m-2 rounded-xl bg-surface-2/70 p-3">
+      <div className="flex items-start gap-2.5">
+        <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-lg bg-brand-subtle text-brand">
+          <CircleHelp className="size-4" />
+        </span>
         <div className="min-w-0">
           <h3 id="pal-clar-q" className="text-heading-sm text-foreground">
             {response.question}
@@ -54,15 +56,21 @@ export function ClarificationPanel({
           )}
         </div>
       </div>
-      <ol className="mt-3 flex flex-col gap-1" aria-label={`${options.length} options`}>
+      {/* Branches hang off a rail, like a decision tree: one question, numbered answers. */}
+      <ol className="relative mt-3 ml-3.5 flex flex-col gap-1.5 pl-4" aria-label={`${options.length} options`}>
+        <span aria-hidden className="absolute top-5 bottom-5 left-0 w-px bg-border-strong/35" />
         {options.map((o, i) => (
-          <li key={o.id}>
+          <li key={o.id} className="relative">
+            <span aria-hidden className="absolute top-1/2 -left-4 h-px w-4 bg-border-strong/35" />
             <button
               type="button"
               onClick={() => onChoose(o.id)}
-              className="flex w-full items-center gap-3 rounded-md border border-border bg-surface px-3 py-2 text-left hover:border-border-strong hover:bg-surface-2"
+              className="flex w-full items-center gap-3 rounded-xl bg-surface py-2 pr-3 pl-2 text-left shadow-card transition-[box-shadow,scale] duration-150 ease-out hover:shadow-card-hover active:scale-[0.99]"
             >
-              <Kbd>{i + 1}</Kbd>
+              <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-lg bg-surface-2 font-mono text-meta text-muted-foreground">
+                {i + 1}
+              </span>
+              <span className="sr-only">Option {i + 1}: </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-body font-medium text-foreground">{o.label}</span>
                 {o.detail && <span className="block truncate text-body-sm text-muted-foreground">{o.detail}</span>}
@@ -74,7 +82,7 @@ export function ClarificationPanel({
           <button
             type="button"
             onClick={onRephrase}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-body text-muted-foreground hover:bg-surface hover:text-foreground"
+            className="flex w-full items-center gap-3 rounded-xl py-2 pr-3 pl-3.5 text-left text-body text-muted-foreground transition-colors duration-150 ease-out hover:bg-surface hover:text-foreground"
           >
             <PencilLine aria-hidden className="size-4" />
             None of these — rephrase
@@ -82,7 +90,7 @@ export function ClarificationPanel({
           </button>
         </li>
       </ol>
-      {response.allowFreeText && <p className="mt-2 px-1 text-body-sm text-muted-foreground">Or type an answer above and press Enter.</p>}
+      {response.allowFreeText && <p className="mt-2 pl-1 text-body-sm text-muted-foreground">Or type an answer above and press Enter.</p>}
     </section>
   );
 }
@@ -96,10 +104,11 @@ const REASON_COPY: Record<string, string> = {
 };
 
 function riskIcon(p: Proposal) {
-  if (p.risk === 'DESTRUCTIVE') return <Trash2 aria-hidden className="size-4 text-danger" />;
-  if (p.risk === 'EXTERNAL') return <Mail aria-hidden className="size-4 text-foreground" />;
-  if (p.risk === 'BULK') return <ListChecks aria-hidden className="size-4 text-foreground" />;
-  return <ShieldAlert aria-hidden className="size-4 text-foreground" />;
+  const tile = 'grid size-7 shrink-0 place-items-center rounded-lg';
+  if (p.risk === 'DESTRUCTIVE') return <span aria-hidden className={cn(tile, 'bg-danger-subtle text-danger')}><Trash2 className="size-4" /></span>;
+  if (p.risk === 'EXTERNAL') return <span aria-hidden className={cn(tile, 'bg-brand-subtle text-brand')}><Mail className="size-4" /></span>;
+  if (p.risk === 'BULK') return <span aria-hidden className={cn(tile, 'bg-warning-subtle text-warning')}><ListChecks className="size-4" /></span>;
+  return <span aria-hidden className={cn(tile, 'bg-surface-2 text-foreground')}><ShieldAlert className="size-4" /></span>;
 }
 
 function useMinutesLeft(expiresAt: string): number {
@@ -127,9 +136,9 @@ export function ProposalPanel({
   const isDraft = p.risk === 'EXTERNAL';
   const changes = p.diff.length;
   return (
-    <section aria-labelledby="pal-prop-h" className="m-2 rounded-lg border border-border-strong bg-surface p-3">
-      <div className="flex items-start gap-2">
-        <span className="mt-0.5">{riskIcon(p)}</span>
+    <section aria-labelledby="pal-prop-h" className="m-2 rounded-xl bg-surface p-3.5 shadow-card">
+      <div className="flex items-start gap-2.5">
+        {riskIcon(p)}
         <div className="min-w-0 flex-1">
           <h3 id="pal-prop-h" className="text-heading-sm text-foreground">
             {isDraft ? 'Review this draft' : `Confirm ${changes > 1 ? `${changes} changes` : 'this change'}`}
@@ -140,7 +149,7 @@ export function ProposalPanel({
       {p.reasons.length > 0 && (
         <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Why confirmation is needed">
           {p.reasons.map((r) => (
-            <li key={r} className="rounded-sm border border-dashed border-border-strong px-1.5 py-0.5 text-meta text-muted-foreground">
+            <li key={r} className="rounded-full bg-surface-2 px-2 py-0.5 text-meta text-muted-foreground">
               {REASON_COPY[r] ?? r}
               {r === 'untrusted_source' && p.taintSources?.length ? ` (${p.taintSources.join(', ')})` : ''}
             </li>
@@ -148,7 +157,7 @@ export function ProposalPanel({
         </ul>
       )}
       {changes > 0 && (
-        <ul className="mt-3 max-h-56 divide-y divide-border overflow-y-auto rounded-md border border-border" aria-label="Changes">
+        <ul className="mt-3 max-h-56 divide-y divide-border overflow-y-auto rounded-lg bg-surface-2/60" aria-label="Changes">
           {p.diff.slice(0, isDraft ? 20 : 10).map((d, i) => (
             <li key={i} className="px-3 py-2 text-body-sm">
               <span className="text-muted-foreground">
@@ -181,14 +190,14 @@ export function ProposalPanel({
           disabled={expired}
           onClick={() => onDecide('confirm')}
           className={cn(
-            'inline-flex h-8 items-center gap-2 rounded-md px-3 text-body font-medium disabled:opacity-50',
-            destructive ? 'bg-danger text-white dark:text-background' : 'bg-brand text-brand-foreground hover:bg-brand/90',
+            'inline-flex h-8 items-center gap-2 rounded-lg px-3 text-body font-medium transition-[scale,opacity] duration-150 ease-out hover:opacity-90 active:scale-[0.97] disabled:opacity-50',
+            destructive ? 'bg-danger text-white dark:text-background' : 'bg-foreground text-background',
           )}
         >
           {isDraft ? 'Save draft to Gmail' : destructive ? 'Delete' : 'Confirm'}
-          <Kbd className="border-transparent bg-black/15 text-current">{confirmShortcut}</Kbd>
+          <Kbd className="border-transparent bg-[color-mix(in_oklab,currentColor_18%,transparent)] text-current">{confirmShortcut}</Kbd>
         </button>
-        <button type="button" onClick={() => onDecide('cancel')} className="inline-flex h-8 items-center gap-2 rounded-md px-3 text-body text-foreground hover:bg-surface-2">
+        <button type="button" onClick={() => onDecide('cancel')} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-body text-foreground transition-[background-color,scale] duration-150 ease-out hover:bg-surface-2 active:scale-[0.97]">
           Cancel <Kbd>Esc</Kbd>
         </button>
         <span className="ml-auto text-meta text-subtle-foreground">{expired ? 'This expired — run the command again.' : `Expires in ${minutes} min`}</span>
@@ -277,7 +286,7 @@ export function ErrorPanel({
   const { code, message, retryable } = response.error;
   const modelDown = code === 'MODEL_ERROR' || code === 'PROVIDER_UNAVAILABLE' || code === 'INTERNAL';
   return (
-    <section role="alert" className="m-2 rounded-lg bg-danger-subtle p-3">
+    <section role="alert" className="m-2 rounded-xl bg-danger-subtle p-3">
       <div className="flex items-start gap-2">
         <CircleX aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
         <div className="min-w-0 flex-1">

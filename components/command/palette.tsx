@@ -190,10 +190,10 @@ export function CommandPalette() {
           className="fixed top-2 left-1/2 z-50 w-[calc(100vw-16px)] -translate-x-1/2 outline-none sm:top-[20vh] sm:w-[var(--palette-w)]"
         >
           <m.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
+            initial={{ opacity: 0, scale: 0.98, filter: 'blur(4px)' }}
+            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
             transition={SPRING_PANEL}
-            className="overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-overlay"
+            className="overflow-hidden rounded-2xl bg-popover text-popover-foreground shadow-overlay"
           >
             <Dialog.Title className="sr-only">Command bar</Dialog.Title>
             <Cmdk label="Command bar" shouldFilter={false} loop onKeyDown={onKeyDown} className="flex flex-col">
