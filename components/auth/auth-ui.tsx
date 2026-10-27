@@ -6,16 +6,19 @@ import { cn } from '@/lib/utils';
 
 export function AuthShell({ title, description, children, footer }: { title: string; description?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode }) {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-4 py-10 text-foreground">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-10 text-foreground">
       <div className="w-full max-w-[380px]">
-        <Link href="/" className="mx-auto mb-6 flex w-fit items-center gap-2 rounded-md text-heading-sm text-foreground focus-visible:outline-2 focus-visible:outline-ring">
-          <span aria-hidden className="grid size-7 place-items-center rounded-md bg-foreground text-[0.6875rem] font-semibold text-background">
-            OS
-          </span>
+        <Link href="/" className="mx-auto mb-8 flex w-fit items-center gap-2 rounded-md text-heading-sm font-semibold text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+          <svg viewBox="0 0 20 20" className="size-6" aria-hidden="true" focusable="false">
+            <rect x="0.5" y="0.5" width="19" height="19" rx="5" className="fill-foreground" />
+            <rect x="5" y="5.5" width="10" height="1.8" rx="0.9" className="fill-background" />
+            <rect x="5" y="9.1" width="7" height="1.8" rx="0.9" className="fill-background" />
+            <rect x="5" y="12.7" width="4" height="1.8" rx="0.9" className="fill-background" />
+          </svg>
           Personal OS
         </Link>
-        <div className="rounded-xl border border-border bg-surface p-6 shadow-popover sm:p-7">
-          <h1 className="text-heading-lg text-foreground">{title}</h1>
+        <div className="rounded-2xl bg-surface p-6 shadow-popover sm:p-8">
+          <h1 className="font-serif text-[2.25rem] leading-[1.05] tracking-[-0.015em] text-foreground">{title}</h1>
           {description && <p className="mt-1 text-body text-muted-foreground">{description}</p>}
           <div className="mt-6">{children}</div>
         </div>
@@ -27,14 +30,14 @@ export function AuthShell({ title, description, children, footer }: { title: str
 
 export function AuthLoading() {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background" aria-busy="true">
+    <main className="flex min-h-dvh items-center justify-center bg-canvas" aria-busy="true">
       <Loader2 aria-label="Loading" className="size-5 animate-spin text-subtle-foreground" />
     </main>
   );
 }
 
 export const authInputCls =
-  'h-10 w-full rounded-md border border-border bg-surface px-3 text-body text-foreground placeholder:text-subtle-foreground hover:border-border-strong focus-visible:border-ring focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring/40 aria-invalid:border-danger';
+  'h-10 w-full rounded-lg border border-border bg-surface px-3 text-body text-foreground placeholder:text-subtle-foreground hover:border-border-strong focus-visible:border-ring focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring/40 aria-invalid:border-danger';
 
 export function AuthField({ id, label, hint, children }: { id: string; label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -57,7 +60,7 @@ export function AuthNotice({ tone, children }: { tone: 'error' | 'success'; chil
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
-      className={cn('flex items-start gap-2 rounded-md px-3 py-2 text-body-sm text-foreground', tone === 'error' ? 'bg-danger-subtle' : 'bg-success-subtle')}
+      className={cn('flex items-start gap-2 rounded-lg px-3 py-2 text-body-sm text-foreground', tone === 'error' ? 'bg-danger-subtle' : 'bg-success-subtle')}
     >
       <Icon aria-hidden className={cn('mt-0.5 size-4 shrink-0', tone === 'error' ? 'text-danger' : 'text-success')} />
       <span>{children}</span>
@@ -76,8 +79,8 @@ export function AuthButton({
     <button
       {...props}
       className={cn(
-        'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-4 text-body font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60',
-        variant === 'primary' ? 'bg-brand text-brand-foreground hover:bg-brand/90' : 'border border-border bg-surface text-foreground hover:bg-surface-2',
+        'inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-4 text-body font-medium transition-[background-color,opacity,scale] duration-150 ease-out enabled:active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60',
+        variant === 'primary' ? 'bg-foreground text-background hover:opacity-90' : 'bg-surface text-foreground shadow-card hover:bg-surface-2',
         className,
       )}
     >
