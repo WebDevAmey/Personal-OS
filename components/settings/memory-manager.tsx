@@ -92,7 +92,7 @@ export function MemoryManager({ items, deleted, query }: { items: MemoryDTO[]; d
   return (
     <div className="flex flex-col gap-6">
       <form
-        className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3"
+        className="flex flex-col gap-2 rounded-xl bg-surface shadow-card p-3"
         onSubmit={(e) => {
           e.preventDefault();
           void add();

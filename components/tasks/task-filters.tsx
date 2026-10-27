@@ -9,7 +9,7 @@ import { cn } from '@/components/app/cn';
 import { PRIORITY_LABELS } from './types';
 
 const selectCls =
-  'h-8 max-w-40 rounded-md border border-border bg-background pr-7 pl-2 text-body-sm text-foreground hover:border-border-strong focus-visible:outline-2 focus-visible:outline-ring';
+  'h-8 max-w-40 rounded-md border border-border bg-surface pr-7 pl-2 text-body-sm text-foreground hover:border-border-strong focus-visible:outline-2 focus-visible:outline-ring';
 
 export interface TaskFiltersProps {
   /** Which controls this view offers. */
@@ -57,7 +57,7 @@ export function TaskFilters({ show }: TaskFiltersProps) {
             value={q}
             autoFocus
             onChange={(e) => setQ(e.target.value)}
-            className="h-9 w-full rounded-md border border-border bg-background pr-2 pl-8 text-body text-foreground placeholder:text-subtle-foreground hover:border-border-strong focus-visible:outline-2 focus-visible:outline-ring"
+            className="h-9 w-full rounded-md border border-border bg-surface pr-2 pl-8 text-body text-foreground placeholder:text-subtle-foreground hover:border-border-strong focus-visible:outline-2 focus-visible:outline-ring"
           />
         </div>
       )}

@@ -16,7 +16,7 @@ import { useTaskActions } from './use-task-actions';
 import { PRIORITY_LABELS, type LocalDateTime, type TaskDetailDTO, type TaskDTO, type TaskEventDTO } from './types';
 
 export const inputCls =
-  'h-8 w-full min-w-0 rounded-md border border-border bg-background px-2 text-body text-foreground placeholder:text-subtle-foreground hover:border-border-strong focus-visible:border-ring focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring/40 disabled:opacity-50';
+  'h-8 w-full min-w-0 rounded-md border border-border bg-surface px-2 text-body text-foreground placeholder:text-subtle-foreground hover:border-border-strong focus-visible:border-ring focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring/40 disabled:opacity-50';
 const ghostBtn =
   'inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-body text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50';
 

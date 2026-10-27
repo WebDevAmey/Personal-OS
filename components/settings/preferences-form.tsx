@@ -71,7 +71,7 @@ function Toggle({ id, checked, onChange, label }: { id: string; checked: boolean
         checked ? 'border-brand bg-brand' : 'border-border-strong bg-surface-2',
       )}
     >
-      <span className={cn('inline-block size-4 rounded-full bg-background shadow transition-transform duration-120', checked ? 'translate-x-[18px]' : 'translate-x-[3px]')} />
+      <span className={cn('inline-block size-4 rounded-full bg-surface shadow transition-transform duration-120', checked ? 'translate-x-[18px]' : 'translate-x-[3px]')} />
     </button>
   );
 }
@@ -124,8 +124,8 @@ export function PreferencesForm({ initial }: { initial: PreferencesDTO }) {
       }}
       className="flex flex-col"
     >
-      <section aria-labelledby="pref-day" className="divide-y divide-border">
-        <h2 id="pref-day" className="pb-2 text-heading-sm text-foreground">
+      <section aria-labelledby="pref-day" className="divide-y divide-border rounded-xl bg-surface px-4 shadow-card sm:px-5">
+        <h2 id="pref-day" className="py-3.5 text-heading-sm text-foreground">
           Your day
         </h2>
         <Field label="Time zone" htmlFor="pref-tz" hint="Due dates, reminders and the briefing follow this zone.">
@@ -185,8 +185,8 @@ export function PreferencesForm({ initial }: { initial: PreferencesDTO }) {
         </Field>
       </section>
 
-      <section aria-labelledby="pref-access" className="mt-6 divide-y divide-border">
-        <h2 id="pref-access" className="pb-2 text-heading-sm text-foreground">
+      <section aria-labelledby="pref-access" className="mt-6 divide-y divide-border rounded-xl bg-surface px-4 shadow-card sm:px-5">
+        <h2 id="pref-access" className="py-3.5 text-heading-sm text-foreground">
           Voice and accessibility
         </h2>
         <Field label="Read results aloud" htmlFor="pref-speech" hint="Short spoken confirmations after commands. Email contents are never read aloud.">
@@ -220,7 +220,7 @@ export function PreferencesForm({ initial }: { initial: PreferencesDTO }) {
         </Field>
       </section>
 
-      <div className="sticky bottom-0 mt-6 flex items-center justify-end gap-3 border-t border-border bg-background/95 py-3 backdrop-blur">
+      <div className="sticky bottom-0 mt-6 flex items-center justify-end gap-3 border-t border-border bg-canvas/90 py-3 backdrop-blur-md">
         {error && (
           <p role="alert" className="mr-auto text-body-sm text-danger">
             {error}

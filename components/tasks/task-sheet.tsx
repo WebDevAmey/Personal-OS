@@ -25,7 +25,7 @@ export function TaskSheet() {
         <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/10 transition-opacity duration-180 data-ending-style:opacity-0 data-starting-style:opacity-0 md:bg-black/5 dark:bg-black/40" />
         <Dialog.Popup
           aria-labelledby={titleId}
-          className="fixed inset-y-0 right-0 z-40 flex w-full flex-col overflow-y-auto border-l border-border bg-background shadow-overlay outline-none transition-transform duration-240 ease-out data-ending-style:translate-x-full data-starting-style:translate-x-full sm:w-[var(--sheet-w)]"
+          className="fixed inset-y-0 right-0 z-40 flex w-full flex-col overflow-y-auto bg-surface shadow-overlay outline-none transition-transform duration-240 ease-out data-ending-style:translate-x-full data-starting-style:translate-x-full sm:w-[var(--sheet-w)]"
         >
           {taskId && (
             <TaskDetail

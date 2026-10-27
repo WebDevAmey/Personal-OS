@@ -25,7 +25,7 @@ function Frame({ children }: { children: React.ReactNode }) {
   return (
     <section
       aria-labelledby="agenda-heading"
-      className="rounded-lg border border-border bg-surface"
+      className="rounded-xl bg-surface shadow-card"
     >
       <h2
         id="agenda-heading"
@@ -75,7 +75,7 @@ export async function Agenda({
         <p className="text-body-sm text-muted-foreground">
           Connect Google to see today&rsquo;s meetings next to your tasks.
         </p>
-        <ConnectGoogleLink className="mt-3 inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-body font-medium text-foreground hover:bg-surface-2">
+        <ConnectGoogleLink className="mt-3 inline-flex h-8 items-center rounded-md border border-border bg-surface px-3 text-body font-medium text-foreground hover:bg-surface-2">
           Connect Google
         </ConnectGoogleLink>
       </Frame>
@@ -87,7 +87,7 @@ export async function Agenda({
         <p className="text-body-sm text-muted-foreground">
           Google access expired.
         </p>
-        <ConnectGoogleLink className="mt-3 inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-body font-medium text-foreground hover:bg-surface-2">
+        <ConnectGoogleLink className="mt-3 inline-flex h-8 items-center rounded-md border border-border bg-surface px-3 text-body font-medium text-foreground hover:bg-surface-2">
           Reconnect Google
         </ConnectGoogleLink>
       </Frame>
@@ -110,7 +110,7 @@ export async function Agenda({
           <p className="text-body-sm text-muted-foreground">
             Google access expired.
           </p>
-          <ConnectGoogleLink className="mt-3 inline-flex h-8 items-center rounded-md border border-border bg-background px-3 text-body font-medium text-foreground hover:bg-surface-2">
+          <ConnectGoogleLink className="mt-3 inline-flex h-8 items-center rounded-md border border-border bg-surface px-3 text-body font-medium text-foreground hover:bg-surface-2">
             Reconnect Google
           </ConnectGoogleLink>
         </Frame>

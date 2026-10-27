@@ -272,7 +272,7 @@ export function TaskList({ items, today, label, grouped = false, empty, projects
                 {heading} <span className="tabular font-normal">· {section.rows.length}</span>
               </h3>
             )}
-            <ul aria-label={heading ? `${label}: ${heading}` : label} className="flex flex-col">
+            <ul aria-label={heading ? `${label}: ${heading}` : label} className="flex flex-col rounded-xl bg-surface p-1 shadow-card">
               <AnimatePresence initial={false}>
                 {section.rows.map(({ task }) => (
                   <TaskRow
@@ -350,7 +350,7 @@ function BulkBar({
   const btn = 'inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-body hover:bg-surface disabled:opacity-50';
   const sel = 'h-8 rounded-md border border-border-strong bg-surface px-2 text-body';
   return (
-    <div role="toolbar" aria-label={`${count} selected`} className="sticky top-[calc(var(--topbar-h)+8px)] z-10 flex flex-wrap items-center gap-1 rounded-lg border border-border bg-surface-2 p-1.5 shadow-popover">
+    <div role="toolbar" aria-label={`${count} selected`} className="sticky top-[calc(var(--topbar-h)+8px)] z-10 flex flex-wrap items-center gap-1 rounded-xl bg-surface p-1.5 shadow-popover">
       <span className="px-2 text-body font-medium tabular" aria-live="polite">
         {count} selected
       </span>

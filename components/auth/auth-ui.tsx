@@ -34,7 +34,7 @@ export function AuthLoading() {
 }
 
 export const authInputCls =
-  'h-10 w-full rounded-md border border-border bg-background px-3 text-body text-foreground placeholder:text-subtle-foreground hover:border-border-strong focus-visible:border-ring focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring/40 aria-invalid:border-danger';
+  'h-10 w-full rounded-md border border-border bg-surface px-3 text-body text-foreground placeholder:text-subtle-foreground hover:border-border-strong focus-visible:border-ring focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring/40 aria-invalid:border-danger';
 
 export function AuthField({ id, label, hint, children }: { id: string; label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -77,7 +77,7 @@ export function AuthButton({
       {...props}
       className={cn(
         'inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-4 text-body font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60',
-        variant === 'primary' ? 'bg-brand text-brand-foreground hover:bg-brand/90' : 'border border-border bg-background text-foreground hover:bg-surface-2',
+        variant === 'primary' ? 'bg-brand text-brand-foreground hover:bg-brand/90' : 'border border-border bg-surface text-foreground hover:bg-surface-2',
         className,
       )}
     >

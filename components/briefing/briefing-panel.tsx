@@ -94,7 +94,7 @@ export function BriefingPanel({
   return (
     <section
       aria-labelledby={headingId}
-      className="rounded-lg border border-border bg-surface"
+      className="rounded-xl bg-surface shadow-card"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-3">
         <h2 id={headingId} className="text-heading-sm text-foreground">
@@ -198,7 +198,7 @@ export function BriefingPanel({
 }
 
 const bannerBtn =
-  "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-meta font-medium text-foreground hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-ring";
+  "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface px-2 text-meta font-medium text-foreground hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-ring";
 
 function Banner({
   tone,
@@ -240,10 +240,10 @@ function ConnectGoogleCard() {
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-md border border-dashed border-border-strong px-3 py-3">
       <div className="hidden -space-x-1 sm:flex" aria-hidden>
-        <span className="grid size-7 place-items-center rounded-full border border-border bg-background">
+        <span className="grid size-7 place-items-center rounded-full border border-border bg-surface">
           <Mail className="size-3.5 text-subtle-foreground" />
         </span>
-        <span className="grid size-7 place-items-center rounded-full border border-border bg-background">
+        <span className="grid size-7 place-items-center rounded-full border border-border bg-surface">
           <CalendarDays className="size-3.5 text-subtle-foreground" />
         </span>
       </div>
@@ -501,7 +501,7 @@ function BriefingRow({
           type="button"
           onClick={() => palette.openWith(item.suggestedCommand!)}
           title={item.suggestedCommand}
-          className="hidden h-7 shrink-0 items-center gap-1.5 self-start rounded-md border border-border bg-background px-2 text-meta text-foreground hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-ring sm:inline-flex"
+          className="hidden h-7 shrink-0 items-center gap-1.5 self-start rounded-md border border-border bg-surface px-2 text-meta text-foreground hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-ring sm:inline-flex"
         >
           <Sparkles aria-hidden className="size-3.5 text-subtle-foreground" />
           <span className="max-w-44 truncate">{item.suggestedCommand}</span>
