@@ -1,19 +1,19 @@
 import * as React from "react";
 import { cx as cn } from "@/components/ui/class-names";
-import { GuardFigure } from "./figures/guard/figure";
+import { SorterFigure } from "./figures/sorter/figure";
 import { StampFigure } from "./figures/stamp/figure";
+import { SplitHeading } from "./features";
 import { Reveal } from "./motion";
-import { SectionHeading } from "./section-heading";
 
 function Row({ eyebrow, title, children, figure, flip }: { eyebrow: string; title: string; children: React.ReactNode; figure: React.ReactNode; flip?: boolean }) {
   return (
     <Reveal className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
       <div className={cn("max-w-xl", flip && "lg:order-2")}>
-        <p className="text-mono-label text-muted-foreground uppercase">{eyebrow}</p>
-        <h3 className="mt-3 text-heading-lg text-foreground">{title}</h3>
+        <p className="font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase">{eyebrow}</p>
+        <h3 className="mt-3 font-serif text-[2.25rem] leading-[1.05] tracking-[-0.015em] text-foreground">{title}</h3>
         <div className="mt-4 space-y-4 text-body-lg text-muted-foreground">{children}</div>
       </div>
-      <div className="iso min-w-0">{figure}</div>
+      <div className="iso min-w-0 rounded-3xl bg-surface p-3 shadow-card sm:p-4">{figure}</div>
     </Reveal>
   );
 }
@@ -30,12 +30,22 @@ function Facts({ items }: { items: React.ReactNode[] }) {
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" aria-labelledby="how-title" className="scroll-mt-16 border-t border-border">
-      <div className="mx-auto max-w-6xl space-y-20 px-4 py-20 sm:px-6 sm:py-24 lg:space-y-28">
+    <section id="how-it-works" aria-labelledby="how-title" className="scroll-mt-20">
+      <div className="mx-auto max-w-6xl space-y-20 px-4 py-20 sm:px-6 sm:py-28 lg:space-y-28">
         <Reveal>
-          <SectionHeading id="how-title" eyebrow="How it works" title="Exact about dates, careful with anything risky">
+          <SplitHeading
+            id="how-title"
+            eyebrow="How it works"
+            title={
+              <>
+                Exact about dates.
+                <br />
+                <em className="italic text-muted-foreground">Strict about seven.</em>
+              </>
+            }
+          >
             A command is read by a model, but what it does is decided by rules you can predict.
-          </SectionHeading>
+          </SplitHeading>
         </Reveal>
         <Row eyebrow="Dates" title="The same words give the same date" figure={<StampFigure />}>
           <p>
@@ -49,20 +59,16 @@ export function HowItWorks() {
             ]}
           />
         </Row>
-        <Row eyebrow="Safety" title="Nothing risky happens without you" figure={<GuardFigure />} flip>
+        <Row eyebrow="Briefing" title="Everything read, seven things shown" figure={<SorterFigure />} flip>
           <p>
-            Single, reversible changes happen at once and can be undone. Anything bigger waits for you to confirm, with a list of exactly what will change.
+            The briefing reads every open task, recent mail and today&apos;s calendar, then keeps only what needs you. The rest is still there when you look; it just does not
+            shout.
           </p>
           <Facts
             items={[
+              <>Each item shows where it came from: a task, an email or an event.</>,
               <>
-                <span className="font-medium text-foreground">Bulk</span>: one command that changes more than one existing item.
-              </>,
-              <>
-                <span className="font-medium text-foreground">Destructive</span>: deleting a task, project or memory.
-              </>,
-              <>
-                <span className="font-medium text-foreground">External</span>: creating a Gmail draft, shown first as an editable preview.
+                Anything it worked out rather than read is marked <span className="font-medium text-foreground">Inferred</span>.
               </>,
             ]}
           />
