@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "@/components/landing/figures/kit/iso.css";
 import "@/components/landing/figures/iso-theme.css";
+import "@/components/landing/landing.css";
 import { Footer } from "@/components/footer/footer";
 import { Faq } from "@/components/landing/faq";
 import { Features } from "@/components/landing/features";
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
 
 export default function Home() {
   return (
-    <>
+    <div className="landing">
       {/* Without JavaScript the reveals never run, so show their content. */}
       <noscript>
         <style>{"[data-reveal]{opacity:1!important;transform:none!important}"}</style>
@@ -52,6 +53,6 @@ export default function Home() {
         </section>
       </main>
       <Footer />
-    </>
+    </div>
   );
 }

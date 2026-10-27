@@ -1,0 +1,64 @@
+/*
+ * Landing page only. Tokens for the dawn hero and the footer, plus the few
+ * keyframes the demos use. Every loop here is decorative: the global
+ * reduced-motion guard in app/globals.css stops them, and each demo also
+ * renders its finished state when motion is reduced.
+ */
+.landing {
+  --dawn-1: #1c0d07;
+  --dawn-2: #4a1d0b;
+  --dawn-3: #9a3f0e;
+  --dawn-4: #e08a2c;
+  --dawn-ink: #fff3e3;
+  --dawn-ink-muted: rgb(255 243 227 / 0.74);
+  --glow-a: #f59e0b;
+  --glow-b: #ea580c;
+  --glow-c: #be185d;
+  --footer-top: #fbf6f0;
+  --footer-bottom: #f4dcc4;
+  --footer-ink: #1a1410;
+  --footer-muted: #6b5a4c;
+  --footer-accent: #c2410c;
+  --mosaic: #e9b98e;
+  --promise-dark: #111214;
+  --promise-blue-a: #2340d9;
+  --promise-blue-b: #0d1650;
+}
+:root[data-theme="dark"] .landing,
+:root.dark .landing {
+  --footer-top: #0b0b0d;
+  --footer-bottom: #2a170c;
+  --footer-ink: #fbefe2;
+  --footer-muted: #c4ab96;
+  --footer-accent: #fb923c;
+  --mosaic: #6b3a1a;
+  --promise-dark: #17181b;
+}
+
+/* Hero glow: three blurred blobs drifting slowly, like light through a blind. */
+@keyframes dawn-drift-a {
+  0%, 100% { transform: translate3d(-6%, 0, 0) scale(1); }
+  50% { transform: translate3d(6%, -4%, 0) scale(1.08); }
+}
+@keyframes dawn-drift-b {
+  0%, 100% { transform: translate3d(4%, 2%, 0) scale(1.05); }
+  50% { transform: translate3d(-5%, -3%, 0) scale(0.95); }
+}
+.dawn-blob-a { animation: dawn-drift-a 22s var(--ease-in-out) infinite; }
+.dawn-blob-b { animation: dawn-drift-b 28s var(--ease-in-out) infinite; }
+
+/* Enter: rise a little, fade and unblur. Never from scale 0. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+.rise-in { animation: rise-in 420ms var(--ease-out) both; }
+
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.9) rotate(-8deg); }
+  to { opacity: 1; transform: scale(1) rotate(-6deg); }
+}
+.pop-in { animation: pop-in 360ms var(--ease-out) both; }
+
+@keyframes caret-blink { 50% { opacity: 0; } }
+.caret { animation: caret-blink 1s steps(1) infinite; }
