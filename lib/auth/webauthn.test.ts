@@ -12,9 +12,12 @@ describe('webauthn config', () => {
 
 describe('webauthn config module-load fail-fast', () => {
   const original = process.env.NEXT_PUBLIC_APP_URL;
+  const originalPhase = process.env.NEXT_PHASE;
 
   afterEach(() => {
     process.env.NEXT_PUBLIC_APP_URL = original;
+    if (originalPhase === undefined) delete process.env.NEXT_PHASE;
+    else process.env.NEXT_PHASE = originalPhase;
     vi.resetModules();
   });
 
@@ -35,6 +38,19 @@ describe('webauthn config module-load fail-fast', () => {
     process.env.NEXT_PUBLIC_APP_URL = '';
     vi.resetModules();
     await expect(import('./webauthn')).rejects.toThrow('NEXT_PUBLIC_APP_URL');
+  });
+
+  // `next build` evaluates every route module (and thus this one) while
+  // collecting page data, before runtime env is guaranteed. The production
+  // contract is enforced at server boot by assertServerEnv() instead, so the
+  // module-load check must not block the build itself.
+  it('does not throw at module load during the production build phase', async () => {
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    process.env.NEXT_PHASE = 'phase-production-build';
+    vi.resetModules();
+    const mod = await import('./webauthn');
+    expect(mod.ORIGIN).toBe('');
+    expect(mod.RP_ID).toBe('');
   });
 });
 

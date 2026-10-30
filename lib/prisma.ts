@@ -27,8 +27,23 @@ function createAdapter() {
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter: createAdapter() });
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
+function realClient(): PrismaClient {
+  return (globalForPrisma.prisma ??= new PrismaClient({ adapter: createAdapter() }));
 }
+
+/**
+ * Lazy proxy around the real client. `next build` imports every route module
+ * while collecting page data, and the build environment has no DATABASE_URL —
+ * instantiating at module load made the build fail before any page shipped.
+ * The client is constructed on first property access instead, which only
+ * happens at request time in the server runtime where env vars exist. The
+ * result is cached on globalThis so dev HMR and warm serverless instances
+ * reuse one connection pool.
+ */
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, property) {
+    const client = realClient();
+    const value = Reflect.get(client, property, client);
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+});
